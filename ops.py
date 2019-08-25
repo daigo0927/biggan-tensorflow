@@ -173,6 +173,48 @@ class SelfAttention(layers.Layer):
         return x + self.sigma * attn_g
 
 
+def batch_norm(x, mean, var, beta, gamma, epsilon):
+    return gamma*(x - mean)/(tf.sqrt(var) + epsilon) + beta
+
+
+# class BatchNorm(layers.Layer):
+#     def __init__(self,
+#                  axis,
+#                  momentum,
+#                  epsilon,
+#                  beta,
+#                  gamma,
+#                  name='batch_norm'):
+#         super(BatchNorm, self).__init__(name=name)
+#         self.axis = axis
+#         self.momentum = momentum
+#         self.epsilon = epsilon
+#         self.beta = beta
+#         self.gamma = gamma
+
+#     def build(self, input_shape):
+#         moving_shape = [1, 1, 1, input_shape[-1]]
+#         self.moving_mean = self.add_weight('moving_mean', shape=moving_shape,
+#                                            initializer=tf.ones_initializer(),
+#                                            trainable=False)
+#         self.moving_var = self.add_weight('moving_var', shape=moving_shape,
+#                                           initializer=tf.zeros_initializer(),
+#                                           trainable=False)
+
+#     def call(self, x, training):
+#         mean, var = tf.nn.moments(x, self.axis, keepdims=True)
+#         # update moving statistics
+#         moving_mean = self.moving_mean * self.momentum + mean * (1 - self.momentum)
+#         self.moving_mean.assign(moving_mean)
+#         moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
+#         self.moving_var.assign(moving_var)
+#         if training:
+#             x = tf.nn.batch_normalization(x, mean, var, beta, gamma, self.epsilon)
+#         else:
+#             x = tf.nn.batch_normalization(x, self.moving_mean, self.moving_var,
+#                                           self.beta, self.gamma, self.epsilon)
+
+
 class ConditionalBatchNorm(layers.Layer):
     def __init__(self,
                  input_dim,
@@ -187,17 +229,25 @@ class ConditionalBatchNorm(layers.Layer):
         self.epsilon = epsilon
 
         # create variables here because of multiple inputs
-        moving_shape = [1, 1, 1, input_dim]
-        self.moving_mean = self.add_weight('moving_mean', shape=moving_shape,
-                                           initializer=tf.ones_initializer(),
-                                           trainable=False)
-        self.moving_var = self.add_weight('moving_var', shape=moving_shape,
-                                          initializer=tf.zeros_initializer(),
-                                          trainable=False)
+        self.moving_shape = [1, 1, 1, input_dim]
+        self.moving_mean = None
+        # self.moving_mean = self.add_weight('moving_mean', shape=moving_shape,
+        #                                    initializer=tf.ones_initializer(),
+        #                                    trainable=False)
+        self.moving_var = None
+        # self.moving_var = self.add_weight('moving_var', shape=moving_shape,
+        #                                   initializer=tf.zeros_initializer(),
+        #                                   trainable=False)
         self.linear_beta = SNLinear(input_dim, name='sn_linear_beta')
         self.linear_gamma = SNLinear(input_dim, name='sn_linear_gamma')
 
     def call(self, x, condition, training):
+        self.moving_mean = self.add_weight('moving_mean', shape=self.moving_shape,
+                                           initializer=tf.ones_initializer(),
+                                           trainable=False)
+        self.moving_var = self.add_weight('moving_var', shape=self.moving_shape,
+                                          initializer=tf.zeros_initializer(),
+                                          trainable=False)
         beta = self.linear_beta(condition, training=training)
         beta = tf.expand_dims(tf.expand_dims(beta, 1), 1)
         gamma = self.linear_gamma(condition, training=training)
@@ -205,15 +255,18 @@ class ConditionalBatchNorm(layers.Layer):
 
         if training:
             mean, var = tf.nn.moments(x, self.axis, keepdims=True)
-            x = tf.nn.batch_normalization(x, mean, var, beta, gamma, self.epsilon)
             # update moving statistics
             moving_mean = self.moving_mean * self.momentum + mean * (1 - self.momentum)
             self.moving_mean.assign(moving_mean)
             moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
             self.moving_var.assign(moving_var)
+            x = tf.nn.batch_normalization(x, mean, var, beta, gamma, self.epsilon)
+            # x = batch_norm(x, mean, var, beta, gamma, self.epsilon)
         else:
             x = tf.nn.batch_normalization(x, self.moving_mean, self.moving_var,
                                           beta, gamma, self.epsilon)
+            # x = batch_norm(x, self.moving_mean, self.moving_var,
+            #                beta, gamma, self.epsilon)
         return x
         
 
