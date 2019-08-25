@@ -235,6 +235,7 @@ class ConditionalBatchNorm(layers.Layer):
         #                                    initializer=tf.ones_initializer(),
         #                                    trainable=False)
         self.moving_var = None
+        self.initialized = False
         # self.moving_var = self.add_weight('moving_var', shape=moving_shape,
         #                                   initializer=tf.zeros_initializer(),
         #                                   trainable=False)
@@ -242,12 +243,13 @@ class ConditionalBatchNorm(layers.Layer):
         self.linear_gamma = SNLinear(input_dim, name='sn_linear_gamma')
 
     def call(self, x, condition, training):
-        self.moving_mean = self.add_weight('moving_mean', shape=self.moving_shape,
-                                           initializer=tf.ones_initializer(),
-                                           trainable=False)
-        self.moving_var = self.add_weight('moving_var', shape=self.moving_shape,
-                                          initializer=tf.zeros_initializer(),
-                                          trainable=False)
+        if not self.initialized:
+            self.moving_mean = self.add_weight('moving_mean', shape=self.moving_shape,
+                                               initializer=tf.ones_initializer(),
+                                               trainable=False)
+            self.moving_var = self.add_weight('moving_var', shape=self.moving_shape,
+                                              initializer=tf.zeros_initializer(),
+                                              trainable=False)
         beta = self.linear_beta(condition, training=training)
         beta = tf.expand_dims(tf.expand_dims(beta, 1), 1)
         gamma = self.linear_gamma(condition, training=training)
