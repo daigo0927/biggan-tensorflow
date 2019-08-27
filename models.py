@@ -49,7 +49,7 @@ class Generator(tf.keras.Model):
         self.gf_dim = gf_dim
         self.embedding_size = embedding_size
 
-        self.embed = ops.SNEmbedding(num_classes, embedding_size, name='embed')
+        self.embed = ops.Embedding(num_classes, embedding_size, name='embed')
         self.linear = ops.SNLinear(gf_dim*16*4*4, name='linear')
         self.block0 = GBlock(gf_dim*16, gf_dim*16, name='block_0')
         self.block1 = GBlock(gf_dim*16, gf_dim*8, name='block_1')
@@ -66,7 +66,7 @@ class Generator(tf.keras.Model):
     def call(self, z, target_class, training=True):
         z_split = tf.split(z, num_or_size_splits=6, axis=-1)
         z_0 = z_split[0]
-        embed = self.embed(target_class, training=training)
+        embed = self.embed(target_class)
         conds = [tf.concat([z_i, embed], axis=-1) for z_i in z_split[1:]]
 
         x = self.linear(z_0, training=training)
@@ -138,7 +138,7 @@ class Discriminator(tf.keras.Model):
                              downsample=False)
         
         self.linear = ops.SNLinear(1, name='linear_out')
-        self.embed = ops.SNEmbedding(num_classes, df_dim*16, name='embed')
+        self.embed = ops.Embedding(num_classes, df_dim*16, name='embed')
 
     def call(self, x, labels, training=True):
         x = self.block0(x, training=training)
@@ -152,7 +152,7 @@ class Discriminator(tf.keras.Model):
         x = tf.nn.relu(x)
         x = tf.reduce_sum(x, [1, 2])
         out = self.linear(x, training=training)
-        embed = self.embed(labels, training=training)
+        embed = self.embed(labels)
         out += tf.reduce_sum(x*embed, axis=1, keepdims=True)
         return out
 

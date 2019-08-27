@@ -110,20 +110,39 @@ class SNLinear(layers.Layer):
         return x
 
 
+class Embedding(layers.Layer):
+    def __init__(self,
+                 num_classes,
+                 embedding_size,
+                 name='embedding'):
+        super(Embedding, self).__init__(name=name)
+        self.num_classes = num_classes
+        self.embedding_size = embedding_size
+
+    def build(self, input_shape):
+        embed_shape = [self.num_classes, self.embedding_size]
+        self.embed_map = self.add_weight('embed_map', shape=embed_shape)
+
+    def call(self, x):
+        x = tf.nn.embedding_lookup(self.embed_map, x)
+        return x
+
+
 class SNEmbedding(layers.Layer):
     def __init__(self,
                  num_classes,
                  output_dim,
+                 embedding_size,
                  sn_iters=1,
                  name='snembedding'):
         super(SNEmbedding, self).__init__(name=name)
         self.num_classes = num_classes
-        self.output_dim = output_dim
+        self.embedding_size = embedding_size
         self.sn_iters = sn_iters
 
     def build(self, input_shape):
         self.spectral_norm = SpectralNorm(num_iters=self.sn_iters)
-        embed_shape = [self.num_classes, self.output_dim]
+        embed_shape = [self.num_classes, self.embedding_size]
         self.embed_map = self.add_weight('embed_map', shape=embed_shape)
 
     def call(self, x, training):
@@ -231,14 +250,8 @@ class ConditionalBatchNorm(layers.Layer):
         # create variables here because of multiple inputs
         self.moving_shape = [1, 1, 1, input_dim]
         self.moving_mean = None
-        # self.moving_mean = self.add_weight('moving_mean', shape=moving_shape,
-        #                                    initializer=tf.ones_initializer(),
-        #                                    trainable=False)
         self.moving_var = None
         self.initialized = False
-        # self.moving_var = self.add_weight('moving_var', shape=moving_shape,
-        #                                   initializer=tf.zeros_initializer(),
-        #                                   trainable=False)
         self.linear_beta = SNLinear(input_dim, name='sn_linear_beta')
         self.linear_gamma = SNLinear(input_dim, name='sn_linear_gamma')
 
@@ -250,6 +263,8 @@ class ConditionalBatchNorm(layers.Layer):
             self.moving_var = self.add_weight('moving_var', shape=self.moving_shape,
                                               initializer=tf.zeros_initializer(),
                                               trainable=False)
+            self.initialized = True
+            
         beta = self.linear_beta(condition, training=training)
         beta = tf.expand_dims(tf.expand_dims(beta, 1), 1)
         gamma = self.linear_gamma(condition, training=training)
@@ -263,12 +278,9 @@ class ConditionalBatchNorm(layers.Layer):
             moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
             self.moving_var.assign(moving_var)
             x = tf.nn.batch_normalization(x, mean, var, beta, gamma, self.epsilon)
-            # x = batch_norm(x, mean, var, beta, gamma, self.epsilon)
         else:
             x = tf.nn.batch_normalization(x, self.moving_mean, self.moving_var,
                                           beta, gamma, self.epsilon)
-            # x = batch_norm(x, self.moving_mean, self.moving_var,
-            #                beta, gamma, self.epsilon)
         return x
         
 
