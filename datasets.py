@@ -4,6 +4,15 @@ from glob import glob
 from abc import abstractmethod, ABCMeta
 
 
+def resize_with_crop(image, target_height, target_width):
+    h, w, _ = image.shape.as_list()
+    r = min(h/target_height, w/target_width)
+    hr, wr = int(r*target_height), int(r*target_width)
+    image = tf.image.resize_with_crop_or_pad(image, hr, wr)
+    image = tf.image.resize_images(image, (target_height, target_width))
+    return image
+
+
 class Base(metaclass=ABCMeta):
     def __init__(self,
                  dataset_dir,
@@ -153,10 +162,56 @@ class DogsVsCats(Base):
         imagefiles =  imagefiles_dog + imagefiles_cat
         labels =  [0]*len(imagefiles_dog) + [1]*len(imagefiles_cat)
         self.samples = (imagefiles, labels)
+
+
+class Cat(Base):
+    """ tf.data pipeline for Cat annotation dataset
+    http://academictorrents.com/details/c501571c29d16d7f41d159d699d0e7fb37092cbd
+    thanks for https://github.com/AlexiaJM/relativistic-f-divergences
+
+    """
+    def __init__(self,
+                 dataset_dir,
+                 train_or_test,
+                 batch_size=1,
+                 resize_shape=(128, 128),
+                 crop_shape=None,
+                 rotate=False,
+                 flip_left_right=False,
+                 flip_up_down=False):
+        """
+        Args:
+          - dataset_dir: string of /path/to/dataset-directory
+          - train_or_test: train or test argument
+          - batch_size: int for batch size
+          - resize_shape: tuple for resize shape (optional)
+          - crop_shape: tuple for crop shape (optional)
+          - rotate: boolean for rotation (optional)
+          - flip_left_right: boolean for horizontal flip (optional)
+          - flip_up_down: boolean for vertical flip (optional)
+        """
+        super().__init__(dataset_dir=dataset_dir,
+                         train_or_test=train_or_test,
+                         batch_size=batch_size,
+                         resize_shape=resize_shape,
+                         crop_shape=crop_shape,
+                         rotate=rotate,
+                         flip_left_right=flip_left_right,
+                         flip_up_down=flip_up_down)
+
+    def _set_num_classes(self):
+        self.num_classes = 1
+
+    def _get_samples(self):
+        filepath = self.dataset_dir + '/*.jpg'
+        imagefiles = glob(filepath)
+        labels = [0]*(len(imagefiles))
+        self.samples = (imagefiles, labels)
         
 
 if __name__ == '__main__':
-    pipes = [DogsVsCats
+    pipes = [DogsVsCats,
+             Cat
     ]
 
     config = {'batch_size': 4,
