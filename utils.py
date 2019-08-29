@@ -1,5 +1,7 @@
+import json
 import tensorflow as tf
 from argparse import ArgumentParser
+from collections import OrderedDict
 
 
 def make_z_normal(batch_size, z_dim):
@@ -65,3 +67,9 @@ def prepare_parser():
     parser.add_argument('--test', action='store_true',
                         help='Validate graph construction, stop before training.')
     return parser
+
+
+def save_args(args, filename):
+    args = OrderedDict(vars(args))
+    with open(filename, 'w') as f:
+        json.dump(args, f, indent=4)

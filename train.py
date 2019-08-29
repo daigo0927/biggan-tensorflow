@@ -10,7 +10,7 @@ from tqdm import tqdm
 from datasets import Cat
 from models import Generator, Discriminator
 from losses import get_d_real_loss, get_d_fake_loss, get_g_loss
-from utils import make_z_normal, make_label_uniform, prepare_parser
+from utils import make_z_normal, make_label_uniform, prepare_parser, save_args
 
 
 def train(args):
@@ -64,7 +64,7 @@ def train(args):
         labels_fake = make_label_uniform(args.batch_size, dataset.num_classes)
         with tf.GradientTape() as tape:
             images_fake = generator(zs, labels_fake, training=True)
-            logits_fake = discriminator(images_fake, labels_fake, training=True)
+            logits_fake = discriminator(images_fake, labels_fake, training=False)
             loss = get_g_loss(logits_fake)
         grads = tape.gradient(loss, generator.trainable_weights)
         g_opt.apply_gradients(zip(grads, generator.trainable_weights))
@@ -78,6 +78,7 @@ def train(args):
             os.mkdir('./logs')
         log_dir = f'./logs/history_{datetime.now().strftime("%Y-%m-%d-%H-%M")}'
         summary_writer = tf.summary.create_file_writer(logdir)
+        save_args(args, log_dir+'/args.json')
 
     # ------------- Actual training iteration ---------------
     for i, (images, labels) in enumerate(tqdm(dataset.loader)):
@@ -96,10 +97,11 @@ def train(args):
             discriminator.save_weights(log_dir+'discriminator.ckpt')
             with summary_writer.as_default():
                 tf.summary.scalar('loss_d', d_out['loss'], step=i+1)
-                tf.summary.scalar('loss_g', d_out['loss'], step=i+1)
                 tf.summary.scalar('loss_d_real', d_out['loss_real'], step=i+1)
                 tf.summary.scalar('loss_d_fake', d_out['loss_fake'], step=i+1)
-                tf.summary.scalar('generated_images', g_out['images_fake'], step=i+1)
+                tf.summary.scalar('loss_g', d_out['loss'], step=i+1)
+                tf.summary.image('generated_images', g_out['images_fake'],
+                                 step=i+1, max_outputs=args.num_visualize)
                 summary_writer.flush()
 
         if i == args.num_iters:
