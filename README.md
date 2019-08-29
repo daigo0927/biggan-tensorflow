@@ -39,11 +39,11 @@ tensorboard --logdir=logs
 ```
 
 ## Other dataset?
-You can try to train on the other dataset by imherit the `Base` dataset class in `datasets.py`.
+You can try to train on the other dataset by inherit the `Base` dataset class in `datasets.py`.
 
 ## Acknowledgments
 - Official TensorFlow documents: https://www.tensorflow.org/beta
-- Author's PyTorch implementation of BigGAN: https://github.com/ajbrock/BigGAN-PyTorch
+- The author's PyTorch implementation of BigGAN: https://github.com/ajbrock/BigGAN-PyTorch
 - Using Cat dataset for GAN: https://github.com/AlexiaJM/Deep-learning-with-cats
 - Sophisticated solution in Kaggle competition: https://github.com/bestfitting/kaggle/tree/master/gandogs
 - Easy-to-read tensorflow implementation of BigGAN: https://github.com/taki0112/BigGAN-Tensorflow
