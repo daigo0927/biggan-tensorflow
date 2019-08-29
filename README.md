@@ -39,7 +39,7 @@ tensorboard --logdir=logs
 ```
 
 ## Other dataset?
-You can try to train on the other dataset by impherit the base dataset class in `datasets.py`.
+You can try to train on the other dataset by imherit the `Base` dataset class in `datasets.py`.
 
 ## Acknowledgments
 - Official TensorFlow documents: https://www.tensorflow.org/beta
