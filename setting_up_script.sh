@@ -10,20 +10,13 @@ curl -OL https://archive.org/download/CAT_DATASET/00000003_015.jpg.cat
 ## Setting up folder
 unzip CAT_DATASET_01.zip -d cat_dataset
 unzip CAT_DATASET_02.zip -d cat_dataset
-mv cat_dataset/CAT_00/* cat_dataset
-rm -f cat_dataset/Thumbs.db
-mv cat_dataset/CAT_01/* cat_dataset
-rm -f cat_dataset/Thumbs.db
-mv cat_dataset/CAT_02/* cat_dataset
-rm -f cat_dataset/Thumbs.db
-mv cat_dataset/CAT_03/* cat_dataset
-rm -f cat_dataset/Thumbs.db
-mv cat_dataset/CAT_04/* cat_dataset
-rm -f cat_dataset/Thumbs.db
-mv cat_dataset/CAT_05/* cat_dataset
-rm -f cat_dataset/Thumbs.db
-mv cat_dataset/CAT_06/* cat_dataset
-rm -f cat_dataset/Thumbs.db
+mv -f cat_dataset/CAT_00/* cat_dataset
+mv -f cat_dataset/CAT_01/* cat_dataset
+mv -f cat_dataset/CAT_02/* cat_dataset
+mv -f cat_dataset/CAT_03/* cat_dataset
+mv -f cat_dataset/CAT_04/* cat_dataset
+mv -f cat_dataset/CAT_05/* cat_dataset
+mv -f cat_dataset/CAT_06/* cat_dataset
 rmdir cat_dataset/CAT_0*
 
 ## Error correction

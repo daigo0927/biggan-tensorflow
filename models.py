@@ -178,12 +178,15 @@ if __name__ == '__main__':
     discriminator = Discriminator(num_classes, df_dim, name='discriminator')
 
     training = True
+    print('Validating training loop ...')
     for _ in range(10):
         images_fake = generator(z, labels, training=training)
         logits_real = discriminator(images, labels, training=training)
+        
     training = False
+    print('Validating test loop ...')
     for _ in range(10):
         image_fake = generator(z, labels, training=training)
         logits_fake = discriminator(images_fake, labels, training=training)
 
-    print('Completed.')
+    print('-------------- Completed -----------------')

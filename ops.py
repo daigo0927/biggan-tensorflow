@@ -15,9 +15,8 @@ class SpectralNorm(layers.Layer):
 
     def build(self, input_shape):
         # First sigular vector
-        self.u = self.add_weight('u',
-                                 shape=[1, int(input_shape[-1])],
-                                 # initializer=tf.truncated_normal_initializer(),
+        self.u = self.add_weight('u', shape=[1, int(input_shape[-1])],
+                                 initializer=tf.initializers.TruncatedNormal(),
                                  trainable=False)
 
     def call(self, weights, training=True):
@@ -46,25 +45,27 @@ class SNConv2d(layers.Layer):
                  kernel_size=(3, 3),
                  strides=(2, 2),
                  sn_iters=1,
+                 initializer=tf.initializers.orthogonal(),
                  name='snconv2d'):
         super(SNConv2d, self).__init__(name=name)
         self.filters = filters
         self.kernel_size = kernel_size
         self.strides = strides
         self.sn_iters = sn_iters
+        self.initializer = initializer
 
     def build(self, input_shape):
         self.spectral_norm = SpectralNorm(num_iters=self.sn_iters)
         kernel_shape = [*self.kernel_size, int(input_shape[-1]), self.filters]
-        self.kernel = self.add_weight('kernel', shape=kernel_shape)
-        self.bias = self.add_weight('bias', shape=[self.filters])
+        self.kernel = self.add_weight('kernel', shape=kernel_shape,
+                                      initializer=self.initializer)
+        self.bias = self.add_weight('bias', shape=[self.filters],
+                                    initializer=tf.zeros_initializer())
 
     def call(self, x, training):
         w_bar = self.spectral_norm(self.kernel, training=training)
-        x = tf.nn.conv2d(x,
-                         w_bar,
-                         strides=[1, *self.strides, 1],
-                         padding='SAME')
+        x = tf.nn.conv2d(x, w_bar,
+                         strides=[1, *self.strides, 1], padding='SAME')
         x = tf.nn.bias_add(x, self.bias)
         return x
 
@@ -73,15 +74,18 @@ class SNConv1x1(layers.Layer):
     def __init__(self,
                  filters,
                  sn_iters=1,
+                 initializer=tf.initializers.orthogonal(),
                  name='snconv1x1'):
         super(SNConv1x1, self).__init__(name=name)
         self.filters = filters
         self.sn_iters = sn_iters
+        self.initializer = initializer
 
     def build(self, input_shape):
         self.spectral_norm = SpectralNorm(num_iters=self.sn_iters)
         kernel_shape = [1, 1, int(input_shape[-1]), self.filters]
-        self.kernel = self.add_weight('kernel', shape=kernel_shape)
+        self.kernel = self.add_weight('kernel', shape=kernel_shape,
+                                      initializer=self.initializer)
 
     def call(self, x, training):
         w_bar = self.spectral_norm(self.kernel, training=training)
@@ -92,21 +96,30 @@ class SNConv1x1(layers.Layer):
 class SNLinear(layers.Layer):
     def __init__(self,
                  units,
+                 use_bias=True,
                  sn_iters=1,
+                 initializer=tf.initializers.orthogonal(),
                  name='snlinear'):
         super(SNLinear, self).__init__(name=name)
         self.units = units
+        self.use_bias = use_bias
         self.sn_iters = sn_iters
+        self.initializer = initializer
 
     def build(self, input_shape):
         self.spectral_norm = SpectralNorm(num_iters=self.sn_iters)
         kernel_shape = [int(input_shape[1]), self.units]
-        self.kernel = self.add_weight('kernel', shape=kernel_shape)
-        self.bias = self.add_weight('bias', shape=[self.units])
+        self.kernel = self.add_weight('kernel', shape=kernel_shape,
+                                      initializer=self.initializer)
+        if self.use_bias:
+            self.bias = self.add_weight('bias', shape=[self.units],
+                                        initializer=tf.zeros_initializer())
 
     def call(self, x, training):
         w_bar = self.spectral_norm(self.kernel, training=training)
-        x = tf.matmul(x, w_bar) + self.bias
+        x = tf.matmul(x, w_bar)
+        if self.use_bias:
+            x += self.bias
         return x
 
 
@@ -114,14 +127,17 @@ class Embedding(layers.Layer):
     def __init__(self,
                  num_classes,
                  embedding_size,
+                 initializer=tf.initializers.orthogonal(),
                  name='embedding'):
         super(Embedding, self).__init__(name=name)
         self.num_classes = num_classes
         self.embedding_size = embedding_size
+        self.initializer = initializer
 
     def build(self, input_shape):
         embed_shape = [self.num_classes, self.embedding_size]
-        self.embed_map = self.add_weight('embed_map', shape=embed_shape)
+        self.embed_map = self.add_weight('embed_map', shape=embed_shape,
+                                         initializer=self.initializer)
 
     def call(self, x):
         x = tf.nn.embedding_lookup(self.embed_map, x)
@@ -131,19 +147,21 @@ class Embedding(layers.Layer):
 class SNEmbedding(layers.Layer):
     def __init__(self,
                  num_classes,
-                 output_dim,
                  embedding_size,
                  sn_iters=1,
+                 initializer=tf.initializers.orthogonal(),
                  name='snembedding'):
         super(SNEmbedding, self).__init__(name=name)
         self.num_classes = num_classes
         self.embedding_size = embedding_size
         self.sn_iters = sn_iters
+        self.initializer = initializer
 
     def build(self, input_shape):
         self.spectral_norm = SpectralNorm(num_iters=self.sn_iters)
         embed_shape = [self.num_classes, self.embedding_size]
-        self.embed_map = self.add_weight('embed_map', shape=embed_shape)
+        self.embed_map = self.add_weight('embed_map', shape=embed_shape,
+                                         initializer=self.initializer)
 
     def call(self, x, training):
         embed_map_bar_T = self.spectral_norm(tf.transpose(self.embed_map),
@@ -154,17 +172,28 @@ class SNEmbedding(layers.Layer):
 
 
 class SelfAttention(layers.Layer):
-    def __init__(self, name='self_attention'):
+    def __init__(self,
+                 initializer=tf.initializers.orthogonal(),
+                 name='self_attention'):
         super(SelfAttention, self).__init__(name=name)
+        self.initializer = initializer
 
     def build(self, input_shape):
         num_channels = int(input_shape[-1])
-        self.conv_theta = SNConv1x1(num_channels//8, name='sn_conv_theta')
-        self.conv_phi = SNConv1x1(num_channels//8, name='sn_conv_phi')
-        self.conv_g = SNConv1x1(num_channels//2, name='sn_conv_g')
-        self.conv_attn = SNConv1x1(num_channels, name='sn_conv_attn')
+        self.conv_theta = SNConv1x1(num_channels//8,
+                                    initializer=self.initializer,
+                                    name='sn_conv_theta')
+        self.conv_phi = SNConv1x1(num_channels//8,
+                                  initializer=self.initializer,
+                                  name='sn_conv_phi')
+        self.conv_g = SNConv1x1(num_channels//2,
+                                initializer=self.initializer,
+                                name='sn_conv_g')
+        self.conv_attn = SNConv1x1(num_channels,
+                                   initializer=self.initializer,
+                                   name='sn_conv_attn')
         self.sigma = self.add_weight('sigma', shape=[],
-                                       initializer=tf.constant_initializer(0.0))
+                                     initializer=tf.zeros_initializer())
 
     def call(self, x, training):
         batch_size, h, w, num_channels = map(int, x.shape.as_list())
@@ -192,95 +221,37 @@ class SelfAttention(layers.Layer):
         return x + self.sigma * attn_g
 
 
-def batch_norm(x, mean, var, beta, gamma, epsilon):
-    return gamma*(x - mean)/(tf.sqrt(var) + epsilon) + beta
-
-
-# class BatchNorm(layers.Layer):
-#     def __init__(self,
-#                  axis,
-#                  momentum,
-#                  epsilon,
-#                  beta,
-#                  gamma,
-#                  name='batch_norm'):
-#         super(BatchNorm, self).__init__(name=name)
-#         self.axis = axis
-#         self.momentum = momentum
-#         self.epsilon = epsilon
-#         self.beta = beta
-#         self.gamma = gamma
-
-#     def build(self, input_shape):
-#         moving_shape = [1, 1, 1, input_shape[-1]]
-#         self.moving_mean = self.add_weight('moving_mean', shape=moving_shape,
-#                                            initializer=tf.ones_initializer(),
-#                                            trainable=False)
-#         self.moving_var = self.add_weight('moving_var', shape=moving_shape,
-#                                           initializer=tf.zeros_initializer(),
-#                                           trainable=False)
-
-#     def call(self, x, training):
-#         mean, var = tf.nn.moments(x, self.axis, keepdims=True)
-#         # update moving statistics
-#         moving_mean = self.moving_mean * self.momentum + mean * (1 - self.momentum)
-#         self.moving_mean.assign(moving_mean)
-#         moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
-#         self.moving_var.assign(moving_var)
-#         if training:
-#             x = tf.nn.batch_normalization(x, mean, var, beta, gamma, self.epsilon)
-#         else:
-#             x = tf.nn.batch_normalization(x, self.moving_mean, self.moving_var,
-#                                           self.beta, self.gamma, self.epsilon)
-
-
 class ConditionalBatchNorm(layers.Layer):
     def __init__(self,
                  input_dim,
-                 axis=[0, 1, 2],
+                 axis=-1,
                  momentum=0.999,
                  epsilon=1E-5,
+                 initializer=tf.initializers.orthogonal(),
                  name='conditional_batch_norm'):
         super(ConditionalBatchNorm, self).__init__(name=name)
         self.input_dim = input_dim
         self.axis = axis
         self.momentum = momentum
         self.epsilon = epsilon
-
-        # create variables here because of multiple inputs
-        self.moving_shape = [1, 1, 1, input_dim]
-        self.moving_mean = None
-        self.moving_var = None
-        self.initialized = False
-        self.linear_beta = SNLinear(input_dim, name='sn_linear_beta')
-        self.linear_gamma = SNLinear(input_dim, name='sn_linear_gamma')
+        self.bn = tf.keras.layers.BatchNormalization(axis, momentum, epsilon,
+                                                     center=False, scale=False,
+                                                     name='bn')
+        self.linear_beta = SNLinear(input_dim, use_bias=False,
+                                    initializer=initializer,
+                                    name='sn_linear_beta')
+        self.linear_gamma = SNLinear(input_dim, use_bias=False,
+                                     initializer=initializer,
+                                     name='sn_linear_gamma')
 
     def call(self, x, condition, training):
-        if not self.initialized:
-            self.moving_mean = self.add_weight('moving_mean', shape=self.moving_shape,
-                                               initializer=tf.ones_initializer(),
-                                               trainable=False)
-            self.moving_var = self.add_weight('moving_var', shape=self.moving_shape,
-                                              initializer=tf.zeros_initializer(),
-                                              trainable=False)
-            self.initialized = True
-            
         beta = self.linear_beta(condition, training=training)
         beta = tf.expand_dims(tf.expand_dims(beta, 1), 1)
         gamma = self.linear_gamma(condition, training=training)
-        gamma = 1 + tf.expand_dims(tf.expand_dims(gamma, 1), 1)
+        gamma = tf.expand_dims(tf.expand_dims(gamma, 1), 1)
 
-        if training:
-            mean, var = tf.nn.moments(x, self.axis, keepdims=True)
-            # update moving statistics
-            moving_mean = self.moving_mean * self.momentum + mean * (1 - self.momentum)
-            self.moving_mean.assign(moving_mean)
-            moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
-            self.moving_var.assign(moving_var)
-            x = tf.nn.batch_normalization(x, mean, var, beta, gamma, self.epsilon)
-        else:
-            x = tf.nn.batch_normalization(x, self.moving_mean, self.moving_var,
-                                          beta, gamma, self.epsilon)
+        x = self.bn(x, training=training)
+        x = (1.0 + gamma) * x + beta
         return x
         
 
@@ -293,12 +264,14 @@ if __name__ == '__main__':
     num_classes = 10
     input_dim = 3
     output_dim = 128
+    embedding_size = 128
 
     sn = SpectralNorm()
     conv2d = SNConv2d(filters)
     conv1x1 = SNConv1x1(filters)
     linear = SNLinear(units)
-    embed = SNEmbedding(num_classes, output_dim)
+    embed0 = Embedding(num_classes, embedding_size)
+    embed = SNEmbedding(num_classes, embedding_size)
     self_attn = SelfAttention()
     cbn = ConditionalBatchNorm(input_dim)
 
@@ -328,6 +301,7 @@ if __name__ == '__main__':
     _ = conv2d(images, training=training)
     _ = conv1x1(images, training=training)
     _ = linear(features, training=training)
+    _ = embed0(labels, training=training)
     _ = embed(labels, training=training)
     _ = self_attn(images, training=training)
     _ = cbn(images, features, training=training)
@@ -344,6 +318,7 @@ if __name__ == '__main__':
     _ = conv2d(images, training=training)
     _ = conv1x1(images, training=training)
     _ = linear(features, training=training)
+    _ = embed0(labels, training=training)
     _ = embed(labels, training=training)
     _ = self_attn(images, training=training)
     _ = cbn(images, features, training=training)
