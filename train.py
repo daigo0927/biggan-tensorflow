@@ -83,7 +83,7 @@ def train(args):
 
         print(f'Graph successfully built. Histories are logged in {log_dir}')
         print(f'run \'$tensorboard --logdir={log_dir}\' to see the training logs.')
-        
+
     # ------------- Actual training iteration ---------------
     for i, (images, labels) in enumerate(dataset.loader):
         # Discriminator update
@@ -100,10 +100,10 @@ def train(args):
             generator.save_weights(log_dir+'/generator.ckpt')
             discriminator.save_weights(log_dir+'/discriminator.ckpt')
             with summary_writer.as_default():
-                tf.summary.scalar('loss_d', d_out['loss'], step=i+1)
-                tf.summary.scalar('loss_d_real', d_out['loss_real'], step=i+1)
-                tf.summary.scalar('loss_d_fake', d_out['loss_fake'], step=i+1)
-                tf.summary.scalar('loss_g', d_out['loss'], step=i+1)
+                tf.summary.scalar('d/loss', d_out['loss'], step=i+1)
+                tf.summary.scalar('d/loss_real', d_out['loss_real'], step=i+1)
+                tf.summary.scalar('d/loss_fake', d_out['loss_fake'], step=i+1)
+                tf.summary.scalar('g/loss', d_out['loss'], step=i+1)
                 tf.summary.image('generated_images', g_out['images_fake'],
                                  step=i+1, max_outputs=args.num_visualize)
                 summary_writer.flush()
