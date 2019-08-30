@@ -74,14 +74,18 @@ def train(args):
 
     # ---------------- Log preparation ----------------
     if not args.test:
-        if not os.exists('./logs'):
+        if not os.path.exists('./logs'):
             os.mkdir('./logs')
         log_dir = f'./logs/history_{datetime.now().strftime("%Y-%m-%d-%H-%M")}'
-        summary_writer = tf.summary.create_file_writer(logdir)
+        summary_writer = tf.summary.create_file_writer(log_dir)
         save_args(args, log_dir+'/args.json')
+        bar = tqdm(desc='Trainig loop', total=args.num_iters)
 
+        print(f'Graph successfully built. Histories are logged in {log_dir}')
+        print(f'run \'$tensorboard --logdir={log_dir}\' to see the training logs.')
+        
     # ------------- Actual training iteration ---------------
-    for i, (images, labels) in enumerate(tqdm(dataset.loader)):
+    for i, (images, labels) in enumerate(dataset.loader):
         # Discriminator update
         d_out = update_d(images, labels)
         # Generator update
@@ -94,7 +98,7 @@ def train(args):
 
         if i == 0 or (i+1)%1000 == 0:
             generator.save_weights(log_dir+'/generator.ckpt')
-            discriminator.save_weights(log_dir+'discriminator.ckpt')
+            discriminator.save_weights(log_dir+'/discriminator.ckpt')
             with summary_writer.as_default():
                 tf.summary.scalar('loss_d', d_out['loss'], step=i+1)
                 tf.summary.scalar('loss_d_real', d_out['loss_real'], step=i+1)
@@ -107,6 +111,8 @@ def train(args):
         if i == args.num_iters:
             print('---------- Trainig completed -------------')
             break
+
+        bar.update(1)
 
 
 if __name__ == '__main__':

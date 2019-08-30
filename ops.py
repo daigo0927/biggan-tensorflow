@@ -137,6 +137,7 @@ class Embedding(layers.Layer):
     def build(self, input_shape):
         embed_shape = [self.num_classes, self.embedding_size]
         self.embed_map = self.add_weight('embed_map', shape=embed_shape,
+                                         dtype=tf.float32,
                                          initializer=self.initializer)
 
     def call(self, x):
