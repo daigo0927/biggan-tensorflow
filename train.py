@@ -68,7 +68,8 @@ def train(args):
             loss = get_g_loss(logits_fake)
         grads = tape.gradient(loss, generator.trainable_weights)
         g_opt.apply_gradients(zip(grads, generator.trainable_weights))
-        out = {'images_fake': images_fake,
+        images_fake_vis = tf.cast((images_fake+1.0)*127.5, dtype=tf.uint8)
+        out = {'images_fake': images_fake_vis,
                'loss': loss}
         return out
 
