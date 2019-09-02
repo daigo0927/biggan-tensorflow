@@ -33,7 +33,7 @@ class GBlock(layers.Layer):
         x = self.conv1(x, training=training)
 
         x_0 = usample(x_0)
-        x_0 = self.conv2(x, training=training)
+        x_0 = self.conv2(x_0, training=training)
 
         return x_0 + x
 
