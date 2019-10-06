@@ -1,19 +1,35 @@
 import os
 import sys
 import time
-import argparse
+import tempfile
 import numpy as np
 import tensorflow as tf
 from datetime import datetime
 from tqdm import tqdm
 
-from datasets import Cat
-from models import Generator, Discriminator
-from losses import get_d_real_loss, get_d_fake_loss, get_g_loss
-from utils import make_z_normal, make_label_uniform, prepare_parser, save_args
+from biggan.datasets import Cat
+from biggan.models import Generator, Discriminator
+from biggan.losses import get_d_real_loss, get_d_fake_loss, get_g_loss
+from biggan.utils import make_z_normal, make_label_uniform, prepare_parser, save_args
 
 
-def train(args):
+def main():
+    parser = prepare_parser()
+    args = parser.parse_args()
+    for k, v in vars(args).items():
+        print(f'{k}: {v}')
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if args.debug:
+            logdir = tmpdir
+        else:
+            if not os.path.exists('logs'):
+                os.mkdir('logs')
+            logdir = f'logs/{datetime.now().strftime("%Y-%m-%dT%H:%M")}'
+        train(args, logdir)
+
+
+def train(args, logdir):
     # --------- Dataset pipeline construction ---------------
     pipe = {'Cat': Cat}[args.dataset]
     dataset = pipe(dataset_dir=args.dataset_dir,
@@ -47,7 +63,7 @@ def train(args):
         with tf.GradientTape() as tape:
             images_fake = generator(zs, labels_fake, training=False)
             logits_real = discriminator(images, labels, training=True)
-            logits_fake = discriminator(images_fake, labels_fake, training=False)
+            logits_fake = discriminator(images_fake, labels_fake, training=True)
             loss_real = get_d_real_loss(logits_real)
             loss_fake = get_d_fake_loss(logits_fake)
             loss = loss_real + loss_fake
@@ -74,32 +90,22 @@ def train(args):
         return out
 
     # ---------------- Log preparation ----------------
-    if not args.test:
-        if not os.path.exists('./logs'):
-            os.mkdir('./logs')
-        log_dir = f'./logs/history_{datetime.now().strftime("%Y-%m-%d-%H-%M")}'
-        summary_writer = tf.summary.create_file_writer(log_dir)
-        save_args(args, log_dir+'/args.json')
-        bar = tqdm(desc='Trainig loop', total=args.num_iters)
-
-        print(f'Graph successfully built. Histories are logged in {log_dir}')
-        print(f'run \'$tensorboard --logdir={log_dir}\' to see the training logs.')
+    summary_writer = tf.summary.create_file_writer(logdir)
+    save_args(args, logdir+'/args.json')
+    print(f'Graph successfully built. Histories are logged in {logdir}')
+    print(f'run \'$tensorboard --logdir={logdir}\' to see the training logs.')
 
     # ------------- Actual training iteration ---------------
-    for i, (images, labels) in enumerate(dataset.loader):
-        # Discriminator update
+    dataiter = iter(dataset.loader)
+    for i in tqdm(range(args.num_iters), desc='Trainig'):
+        images, labels = dataiter.get_next()
         d_out = update_d(images, labels)
-        # Generator update
         if i%args.n_discriminator_update == 0:
             g_out = update_g()
 
-        if args.test:
-            print('--------- Running test succesfully completed ---------')
-            break
-
         if i == 0 or (i+1)%1000 == 0:
-            generator.save_weights(log_dir+'/generator.ckpt')
-            discriminator.save_weights(log_dir+'/discriminator.ckpt')
+            generator.save_weights(logdir+'/generator.ckpt')
+            discriminator.save_weights(logdir+'/discriminator.ckpt')
             with summary_writer.as_default():
                 tf.summary.scalar('d/loss', d_out['loss'], step=i+1)
                 tf.summary.scalar('d/loss_real', d_out['loss_real'], step=i+1)
@@ -109,17 +115,6 @@ def train(args):
                                  step=i+1, max_outputs=args.num_visualize)
                 summary_writer.flush()
 
-        if i == args.num_iters:
-            print('---------- Trainig completed -------------')
-            break
-
-        bar.update(1)
-
 
 if __name__ == '__main__':
-    parser = prepare_parser()
-    args = parser.parse_args()
-    for k, v in vars(args).items():
-        print(f'{k}: {v}')
-
-    train(args)
+    main()

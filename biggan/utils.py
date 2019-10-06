@@ -64,7 +64,7 @@ def prepare_parser():
                         help='Number of figures to be saved. [4]')
     parser.add_argument('-r', '--resume', type = str, default = None,
                         help = 'Learned parameter checkpoint file. (optional)')
-    parser.add_argument('--test', action='store_true',
+    parser.add_argument('--debug', action='store_true',
                         help='Validate graph construction, stop before training.')
     return parser
 
