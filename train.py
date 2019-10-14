@@ -9,7 +9,10 @@ from tqdm import tqdm
 
 from biggan.datasets import Cat
 from biggan.models import Generator, Discriminator
-from biggan.losses import get_d_real_loss, get_d_fake_loss, get_g_loss
+from biggan.losses import discriminator_hinge_loss,\
+     discriminator_bce_loss,\
+     generator_hinge_loss, \
+     generator_bce_loss
 from biggan.utils import make_z_normal, make_label_uniform, prepare_parser, save_args
 
 
@@ -61,9 +64,9 @@ def train(args, logdir):
         zs = make_z_normal(args.batch_size, args.z_dim)
         labels_fake = make_label_uniform(args.batch_size, dataset.num_classes)
         with tf.GradientTape() as tape:
-            images_fake = generator(zs, labels_fake, training=False)
-            logits_real = discriminator(images, labels, training=True)
-            logits_fake = discriminator(images_fake, labels_fake, training=True)
+            images_fake = generator((zs, labels_fake), training=False)
+            logits_real = discriminator((images, labels), training=True)
+            logits_fake = discriminator((images_fake, labels_fake), training=True)
             loss_real = get_d_real_loss(logits_real)
             loss_fake = get_d_fake_loss(logits_fake)
             loss = loss_real + loss_fake
@@ -79,8 +82,8 @@ def train(args, logdir):
         zs = make_z_normal(args.batch_size, args.z_dim)
         labels_fake = make_label_uniform(args.batch_size, dataset.num_classes)
         with tf.GradientTape() as tape:
-            images_fake = generator(zs, labels_fake, training=True)
-            logits_fake = discriminator(images_fake, labels_fake, training=False)
+            images_fake = generator((zs, labels_fake), training=True)
+            logits_fake = discriminator((images_fake, labels_fake), training=False)
             loss = get_g_loss(logits_fake)
         grads = tape.gradient(loss, generator.trainable_weights)
         g_opt.apply_gradients(zip(grads, generator.trainable_weights))
@@ -103,14 +106,14 @@ def train(args, logdir):
         if i%args.n_discriminator_update == 0:
             g_out = update_g()
 
-        if i == 0 or (i+1)%1000 == 0:
+        if i == 0 or (i+1)%args.check_step == 0:
             generator.save_weights(logdir+'/generator.ckpt')
             discriminator.save_weights(logdir+'/discriminator.ckpt')
             with summary_writer.as_default():
                 tf.summary.scalar('d/loss', d_out['loss'], step=i+1)
                 tf.summary.scalar('d/loss_real', d_out['loss_real'], step=i+1)
                 tf.summary.scalar('d/loss_fake', d_out['loss_fake'], step=i+1)
-                tf.summary.scalar('g/loss', d_out['loss'], step=i+1)
+                tf.summary.scalar('g/loss', g_out['loss'], step=i+1)
                 tf.summary.image('generated_images', g_out['images_fake'],
                                  step=i+1, max_outputs=args.num_visualize)
                 summary_writer.flush()

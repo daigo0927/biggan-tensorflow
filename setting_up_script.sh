@@ -8,8 +8,8 @@ curl -OL https://archive.org/download/CAT_DATASET/CAT_DATASET_02.zip
 curl -OL https://archive.org/download/CAT_DATASET/00000003_015.jpg.cat
 
 ## Setting up folder
-unzip CAT_DATASET_01.zip -d cat_dataset
-unzip CAT_DATASET_02.zip -d cat_dataset
+unzip -q CAT_DATASET_01.zip -d cat_dataset
+unzip -q CAT_DATASET_02.zip -d cat_dataset
 mv -f cat_dataset/CAT_00/* cat_dataset
 mv -f cat_dataset/CAT_01/* cat_dataset
 mv -f cat_dataset/CAT_02/* cat_dataset
