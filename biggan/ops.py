@@ -47,7 +47,7 @@ class SNConv2d(layers.Layer):
                                     initializer=tf.zeros_initializer())
         self.u = self.add_weight('u', shape=[1, self.filters], trainable=False)
 
-    def call(self, x, training):
+    def call(self, x, training=None):
         w_bar = spectral_norm(self.kernel, self.u, self.sn_iters, training)
         x = tf.nn.conv2d(x, w_bar, strides=[1, *self.strides, 1], padding='SAME')
         x = tf.nn.bias_add(x, self.bias)
@@ -72,7 +72,7 @@ class SNConv1x1(layers.Layer):
                                       initializer=self.initializer)
         self.u = self.add_weight('u', shape=[1, self.filters], trainable=False)
 
-    def call(self, x, training):
+    def call(self, x, training=None):
         w_bar = spectral_norm(self.kernel, self.u, self.sn_iters, training)
         x = tf.nn.conv2d(x, w_bar, strides=[1, 1, 1, 1], padding='SAME')
         return x
@@ -101,7 +101,7 @@ class SNLinear(layers.Layer):
                                         initializer=tf.zeros_initializer())
         self.u = self.add_weight('u', shape=[1, self.units], trainable=False)
 
-    def call(self, x, training):
+    def call(self, x, training=None):
         w_bar = spectral_norm(self.kernel, self.u, self.sn_iters, training)
         x = tf.matmul(x, w_bar)
         if self.use_bias:
@@ -152,7 +152,7 @@ class SNEmbedding(layers.Layer):
         self.u = self.add_weight('u', shape=[1, self.num_classes],
                                  trainable=False)
 
-    def call(self, x, training):
+    def call(self, x, training=None):
         embed_map_bar_T = spectral_norm(tf.transpose(self.embed_map),
                                         self.u, self.sn_iters, training)
         embed_map_bar = tf.transpose(embed_map_bar_T)
@@ -184,7 +184,7 @@ class SelfAttention(layers.Layer):
         self.sigma = self.add_weight('sigma', shape=[],
                                      initializer=tf.zeros_initializer())
 
-    def call(self, x, training):
+    def call(self, x, training=None):
         batch_size, h, w, in_channels = map(int, x.shape.as_list())
         location_num = h*w
         downsampled_num = location_num//4
@@ -233,7 +233,8 @@ class ConditionalBatchNorm(layers.Layer):
                                      initializer=initializer,
                                      name='sn_linear_gamma')
 
-    def call(self, x, condition, training):
+    def call(self, inputs, training=None):
+        x, condition = inputs
         beta = self.linear_beta(condition, training=training)
         beta = tf.expand_dims(tf.expand_dims(beta, 1), 1)
         gamma = self.linear_gamma(condition, training=training)
@@ -297,7 +298,7 @@ if __name__ == '__main__':
     _ = embed0(labels, training=training)
     _ = embed(labels, training=training)
     _ = self_attn(images, training=training)
-    _ = cbn(images, features, training=training)
+    _ = cbn([images, features], training=training)
     
     training = False
     for _ in range(100):
@@ -314,6 +315,6 @@ if __name__ == '__main__':
     _ = embed0(labels, training=training)
     _ = embed(labels, training=training)
     _ = self_attn(images, training=training)
-    _ = cbn(images, features, training=training)
+    _ = cbn([images, features], training=training)
 
     print('Completed.')

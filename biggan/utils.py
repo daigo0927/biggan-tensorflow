@@ -62,6 +62,8 @@ def prepare_parser():
                         help='Beta2 term of Adam [0.999]')
     parser.add_argument('-nv', '--num_visualize', type=int, default=4,
                         help='Number of figures to be saved. [4]')
+    parser.add_argument('--check_step', type=int, default=1000,
+                        help='Number of figures to be saved. [1000]')
     parser.add_argument('-r', '--resume', type = str, default = None,
                         help = 'Learned parameter checkpoint file. (optional)')
     parser.add_argument('--debug', action='store_true',
