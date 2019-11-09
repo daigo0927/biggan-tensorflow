@@ -110,26 +110,26 @@ class SNLinear(layers.Layer):
             return x
 
 
-class Embedding(layers.Layer):
-    def __init__(self,
-                 num_classes,
-                 embedding_size,
-                 initializer=tf.initializers.orthogonal(),
-                 name='embedding'):
-        super(Embedding, self).__init__(name=name)
-        self.num_classes = num_classes
-        self.embedding_size = embedding_size
-        self.initializer = initializer
+# class Embedding(layers.Layer):
+#     def __init__(self,
+#                  num_classes,
+#                  embedding_size,
+#                  initializer=tf.initializers.orthogonal(),
+#                  name='embedding'):
+#         super(Embedding, self).__init__(name=name)
+#         self.num_classes = num_classes
+#         self.embedding_size = embedding_size
+#         self.initializer = initializer
 
-    def build(self, input_shape):
-        embed_shape = [self.num_classes, self.embedding_size]
-        self.embed_map = self.add_weight('embed_map', shape=embed_shape,
-                                         dtype=tf.float32,
-                                         initializer=self.initializer)
+#     def build(self, input_shape):
+#         embed_shape = [self.num_classes, self.embedding_size]
+#         self.embed_map = self.add_weight('embed_map', shape=embed_shape,
+#                                          dtype=tf.float32,
+#                                          initializer=self.initializer)
 
-    def call(self, x):
-        x = tf.nn.embedding_lookup(self.embed_map, x)
-        return x
+#     def call(self, x):
+#         x = tf.nn.embedding_lookup(self.embed_map, x)
+#         return x
 
 
 class SNEmbedding(layers.Layer):
@@ -261,7 +261,7 @@ if __name__ == '__main__':
     conv2d = SNConv2d(filters)
     conv1x1 = SNConv1x1(filters)
     linear = SNLinear(units)
-    embed0 = Embedding(num_classes, embedding_size)
+    embed0 = layers.Embedding(num_classes, embedding_size)
     embed = SNEmbedding(num_classes, embedding_size)
     self_attn = SelfAttention()
     cbn = ConditionalBatchNorm(input_dim)

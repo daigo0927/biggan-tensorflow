@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from . import ops
+import ops
 
 
 def usample(x):
@@ -14,7 +14,7 @@ class GBlock(layers.Layer):
     def __init__(self,
                  input_dim,
                  filters,
-                 name):
+                 name='block'):
         super(GBlock, self).__init__(name=name)
         self.input_dim = input_dim
         self.filters = filters
@@ -50,34 +50,33 @@ class Generator(tf.keras.Model):
         self.gf_dim = gf_dim
         self.embedding_size = embedding_size
 
-        self.embed = ops.Embedding(num_classes, embedding_size, name='embed')
-        self.linear = ops.SNLinear(gf_dim*16*4*4, name='linear')
-        self.block1 = GBlock(gf_dim*16, gf_dim*16, name='block_1')
-        self.block2 = GBlock(gf_dim*16, gf_dim*8, name='block_2')
-        self.block3 = GBlock(gf_dim*8, gf_dim*4, name='block_3')
+        self.embed = layers.Embedding(num_classes, embedding_size,
+                                      name='embed')
+        self.linear = ops.SNLinear(gf_dim*8*4*4, name='linear')
+        self.block1 = GBlock(gf_dim*8, gf_dim*8, name='block_1')
+        self.block2 = GBlock(gf_dim*8, gf_dim*4, name='block_2')
+        self.block3 = GBlock(gf_dim*4, gf_dim*2, name='block_3')
         self.attn = ops.SelfAttention(name='attn')
-        self.block4 = GBlock(gf_dim*4, gf_dim*2, name='block_4')
-        self.block5 = GBlock(gf_dim*2, gf_dim, name='block_5')
+        self.block4 = GBlock(gf_dim*2, gf_dim, name='block_4')
 
-        self.bn_out = tf.keras.layers.BatchNormalization(momentum=0.9999,
-                                                         epsilon=1e-5,
-                                                         name='bn_out')
+        self.bn_out = layers.BatchNormalization(momentum=0.9999,
+                                                epsilon=1e-5,
+                                                name='bn_out')
         self.conv_out = ops.SNConv2d(3, (3, 3), (1, 1), name='conv_out')
 
     def call(self, inputs, training=None):
         z, target_class = inputs
-        z_split = tf.split(z, num_or_size_splits=6, axis=-1)
+        z_split = tf.split(z, num_or_size_splits=5, axis=-1)
         embed = self.embed(target_class)
         conds = [tf.concat([z_i, embed], axis=-1) for z_i in z_split[1:]]
 
         x = self.linear(z_split[0], training=training)
-        x = tf.reshape(x, [-1, 4, 4, self.gf_dim*16])
+        x = tf.reshape(x, [-1, 4, 4, self.gf_dim*8])
         x = self.block1([x, conds[0]], training=training)
         x = self.block2([x, conds[1]], training=training)
         x = self.block3([x, conds[2]], training=training)
         x = self.attn(x, training=training)
         x = self.block4([x, conds[3]], training=training)
-        x = self.block5([x, conds[4]], training=training)
         
         x = tf.nn.relu(self.bn_out(x, training=training))
         x = self.conv_out(x, training=training)
@@ -94,20 +93,24 @@ class DCGenerator(tf.keras.Model):
         self.gf_dim = gf_dim
 
         self.seq = tf.keras.Sequential([
-            layers.Dense(gf_dim*4*7*7, use_bias=False, name='fc'),
+            layers.Dense(gf_dim*8*4*4, use_bias=False, name='fc'),
             layers.BatchNormalization(name='bn'),
             layers.LeakyReLU(),
-            layers.Reshape((7, 7, gf_dim*4)),
-            layers.Conv2DTranspose(gf_dim*2, (5, 5), (1, 1), 'same',
+            layers.Reshape((4, 4, gf_dim*8)),
+            layers.Conv2DTranspose(gf_dim*4, (5, 5), (1, 1), 'same',
                                    use_bias=False, name='conv_1'),
             layers.BatchNormalization(name='bn_1'),
             layers.LeakyReLU(),
-            layers.Conv2DTranspose(gf_dim, (5, 5), (2, 2), 'same',
+            layers.Conv2DTranspose(gf_dim*2, (5, 5), (2, 2), 'same',
                                    use_bias=False, name='conv_2'),
             layers.BatchNormalization(name='bn_2'),
             layers.LeakyReLU(),
+            layers.Conv2DTranspose(gf_dim, (5, 5), (2, 2), 'same',
+                                   use_bias=False, name='conv_3'),
+            layers.BatchNormalization(name='bn_3'),
+            layers.LeakyReLU(),
             layers.Conv2DTranspose(1, (5, 5), (2, 2), 'same',
-                                   use_bias=False, name='conv_3')
+                                   use_bias=False, name='conv_4')
         ])
 
     def call(self, x, training=None):
@@ -123,15 +126,15 @@ class ResNetGenerator(tf.keras.Model):
         super(ResNetGenerator, self).__init__(name=name)
         self.gf_dim = gf_dim
 
-        self.fc = layers.Dense(gf_dim*16*4*4, name='fc')
-        self.block1 = self._block(gf_dim*16, name='block_1')
-        self.sc1 = layers.Conv2D(gf_dim*16, (1, 1), (1, 1), name='sc_1')
-        self.block2 = self._block(gf_dim*8, name='block_2')
-        self.sc2 = layers.Conv2D(gf_dim*8, (1, 1), (1, 1), name='sc_2')
-        self.block3 = self._block(gf_dim*4, name='block_3')
-        self.sc3 = layers.Conv2D(gf_dim*4, (1, 1), (1, 1), name='sc_3')
-        self.block4 = self._block(gf_dim*2, name='block_4')
-        self.sc4 = layers.Conv2D(gf_dim*2, (1, 1), (1, 1), name='sc_4')
+        self.fc = layers.Dense(gf_dim*8*4*4, name='fc')
+        self.block1 = self._block(gf_dim*8, name='block_1')
+        self.sc1 = layers.Conv2D(gf_dim*8, (1, 1), name='sc_1')
+        self.block2 = self._block(gf_dim*4, name='block_2')
+        self.sc2 = layers.Conv2D(gf_dim*4, (1, 1), name='sc_2')
+        self.block3 = self._block(gf_dim*2, name='block_3')
+        self.sc3 = layers.Conv2D(gf_dim*2, (1, 1), name='sc_3')
+        self.block4 = self._block(gf_dim, name='block_4')
+        self.sc4 = layers.Conv2D(gf_dim, (1, 1), name='sc_4')
 
         self.bn = layers.BatchNormalization(momentum=0.9999, epsilon=1e-5,
                                             name='bn')
@@ -139,7 +142,7 @@ class ResNetGenerator(tf.keras.Model):
 
     def call(self, x, training=None):
         x = self.fc(x)
-        x = tf.reshape(x, [-1, 4, 4, self.gf_dim*16])
+        x = tf.reshape(x, [-1, 4, 4, self.gf_dim*8])
         fx = self.block1(x, training=training)
         x = self.sc1(usample(x)) + fx
         fx = self.block2(x, training=training)
@@ -153,7 +156,7 @@ class ResNetGenerator(tf.keras.Model):
         x = tf.nn.tanh(self.conv(x))
         return x
 
-    def _block(self, filters, name='block'):
+    def _block(self, filters, name):
         seq = tf.keras.Sequential([
             layers.BatchNormalization(name='bn_1'),
             layers.ReLU(),
@@ -175,8 +178,8 @@ class DBlock(layers.Layer):
     def __init__(self,
                  input_dim,
                  filters,
-                 name,
-                 downsample=True):
+                 downsample=True,
+                 name='block'):
         super(DBlock, self).__init__(name=name)
         self.input_dim = input_dim
         self.filters = filters
@@ -210,26 +213,25 @@ class Discriminator(tf.keras.Model):
         self.df_dim = df_dim
 
         self.block1 = DBlock(3, df_dim, name='block_1')
-        self.block2 = DBlock(df_dim, df_dim*2, name='block_2')
         self.attn = ops.SelfAttention(name='attn')
+        self.block2 = DBlock(df_dim, df_dim*2, name='block_2')
         self.block3 = DBlock(df_dim*2, df_dim*4, name='block_3')
         self.block4 = DBlock(df_dim*4, df_dim*8, name='block_4')
-        self.block5 = DBlock(df_dim*8, df_dim*16, name='block_5')
-        self.block6 = DBlock(df_dim*16, df_dim*16, name='block_6',
-                             downsample=False)
+        self.block5 = DBlock(df_dim*8, df_dim*8, downsample=False,
+                             name='block_5')
         
         self.linear = ops.SNLinear(1, name='linear_out')
-        self.embed = ops.Embedding(num_classes, df_dim*16, name='embed')
+        self.embed = ops.SNEmbedding(num_classes, df_dim*8,
+                                     name='embed')
 
     def call(self, inputs, training=True):
         x, labels = inputs
         x = self.block1(x, training=training)
-        x = self.block2(x, training=training)
         x = self.attn(x, training=training)
+        x = self.block2(x, training=training)
         x = self.block3(x, training=training)
         x = self.block4(x, training=training)
         x = self.block5(x, training=training)
-        x = self.block6(x, training=training)
         
         x = tf.nn.relu(x)
         x = tf.reduce_sum(x, axis=[1, 2])
@@ -251,9 +253,12 @@ class DCDiscriminator(tf.keras.Model):
             layers.Conv2D(df_dim, (5, 5), (2, 2), 'same', name='conv_1'),
             layers.LeakyReLU(),
             layers.Dropout(0.3, name='drop_1'),
-            layers.Conv2D(df_dim, (5, 5), (2, 2), 'same', name='conv_2'),
+            layers.Conv2D(df_dim*2, (5, 5), (2, 2), 'same', name='conv_2'),
             layers.LeakyReLU(),
             layers.Dropout(0.3, name='drop_2'),
+            layers.Conv2D(df_dim*4, (5, 5), (2, 2), 'same', name='snconv_3'),
+            layers.LeakyReLU(),
+            layers.Dropout(0.3, name='drop_3'),
             layers.Flatten(),
             layers.Dense(1, name='fc')
         ])
@@ -264,18 +269,22 @@ class DCDiscriminator(tf.keras.Model):
 
 
 class ResNetDiscriminator(tf.keras.Model):
-    def __init__(self, df_dim=64, name='discriminator'):
+    def __init__(self,
+                 df_dim=64,
+                 name='discriminator'):
         super(ResNetDiscriminator, self).__init__(name=name)
         self.df_dim = df_dim
 
         self.block1 = self._block(df_dim, name='block_1')
-        self.sc1 = layers.Conv2D(df_dim, (1, 1), (1, 1), 'same', name='sc_1')
+        self.sc1 = layers.Conv2D(df_dim, (1, 1), name='sc_1')
         self.block2 = self._block(df_dim*2, name='block_2')
-        self.sc2 = layers.Conv2D(df_dim*2, (1, 1), (1, 1), 'same', name='sc_2')
+        self.sc2 = layers.Conv2D(df_dim*2, (1, 1), name='sc_2')
         self.block3 = self._block(df_dim*4, name='block_3')
-        self.sc3 = layers.Conv2D(df_dim*4, (1, 1), (1, 1), 'same', name='sc_3')
+        self.sc3 = layers.Conv2D(df_dim*4, (1, 1), name='sc_3')
         self.block4 = self._block(df_dim*8, name='block_4')
-        self.sc4 = layers.Conv2D(df_dim*8, (1, 1), (1, 1), 'same', name='sc_4')
+        self.sc4 = layers.Conv2D(df_dim*8, (1, 1), name='sc_4')
+        self.block5 = self._block(df_dim*8, name='block_5')
+        self.sc5 = layers.Conv2D(df_dim*8, (1, 1), name='sc_5')
 
         self.fc = layers.Dense(1, name='fc')
 
@@ -288,13 +297,15 @@ class ResNetDiscriminator(tf.keras.Model):
         x = dsample(self.sc3(x)) + dsample(fx)
         fx = self.block4(x, training=training)
         x = dsample(self.sc4(x)) + dsample(fx)
+        fx = self.block5(x, training=training)
+        x = self.sc5(x) + dsample(fx)
 
         x = tf.nn.relu(x)
         x = tf.reduce_sum(x, axis=(1, 2))
         x = self.fc(x)
         return x        
 
-    def _block(self, filters, name='block'):
+    def _block(self, filters, name):
         seq = tf.keras.Sequential([
             layers.ReLU(),
             layers.Conv2D(filters, (3, 3), (1, 1), 'same', name='conv_1'),
@@ -307,7 +318,7 @@ class ResNetDiscriminator(tf.keras.Model):
 if __name__ == '__main__':
     batch_size = 4
     z_dim = 120
-    image_size = (128, 128)
+    image_size = (64, 64)
     num_classes = 10
     gf_dim = 64
     df_dim = 64
