@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from datetime import datetime
 from tqdm import tqdm
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 from biggan.datasets import Cat
 from biggan.models import Generator, Discriminator
@@ -32,17 +33,10 @@ def main():
         train(args, logdir)
 
 
-def train(args, logdir):
-    # --------- Dataset pipeline construction ---------------
-    pipe = {'Cat': Cat}[args.dataset]
-    dataset = pipe(dataset_dir=args.dataset_dir,
-                   train_or_test='train',
-                   batch_size=args.batch_size,
-                   resize_shape=args.resize_shape,
-                   crop_shape=args.crop_shape,
-                   rotate=args.rotate,
-                   flip_left_right=args.flip_lr,
-                   flip_up_down=args.flip_ud)
+def train(config, logdir):
+    # ---------------- Input definition ----------------
+    datagen = ImageDataGenerator(**config['data']['transform'])
+    datagen = datagen.flow_from_directory(# TODO)
 
     # ---------------- Models and optimizers Building ----------------
     discriminator = Discriminator(num_classes=dataset.num_classes,

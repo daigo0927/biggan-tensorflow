@@ -85,38 +85,42 @@ class Generator(tf.keras.Model):
 
     
 class DCGenerator(tf.keras.Model):
-    """ https://www.tensorflow.org/tutorials/generative/dcgan """
+    """ Basic DCGAN (could have a few differences from the original one) """
     def __init__(self,
                  gf_dim=64,
                  name='generator'):
-        super(DCGenerator, self).__init__(name=name)
+        super().__init__(name=name)
         self.gf_dim = gf_dim
 
         self.seq = tf.keras.Sequential([
             layers.Dense(gf_dim*8*4*4, use_bias=False, name='fc'),
-            layers.BatchNormalization(name='bn'),
-            layers.LeakyReLU(),
             layers.Reshape((4, 4, gf_dim*8)),
-            layers.Conv2DTranspose(gf_dim*4, (5, 5), (1, 1), 'same',
-                                   use_bias=False, name='conv_1'),
-            layers.BatchNormalization(name='bn_1'),
-            layers.LeakyReLU(),
-            layers.Conv2DTranspose(gf_dim*2, (5, 5), (2, 2), 'same',
-                                   use_bias=False, name='conv_2'),
-            layers.BatchNormalization(name='bn_2'),
-            layers.LeakyReLU(),
-            layers.Conv2DTranspose(gf_dim, (5, 5), (2, 2), 'same',
-                                   use_bias=False, name='conv_3'),
-            layers.BatchNormalization(name='bn_3'),
-            layers.LeakyReLU(),
-            layers.Conv2DTranspose(1, (5, 5), (2, 2), 'same',
-                                   use_bias=False, name='conv_4')
+
+            layers.BatchNormalization(name='bn'),
+            layers.ReLU(),
+            layers.UpSampling2D(),
+            layers.Conv2D(gf_dim*4, (5, 5), padding='same'),
+            
+            layers.BatchNormalization(name='bn'),
+            layers.ReLU(),
+            layers.UpSampling2D(),
+            layers.Conv2D(gf_dim*2, (5, 5), padding='same'),
+
+            layers.BatchNormalization(name='bn'),
+            layers.ReLU(),
+            layers.UpSampling2D(),
+            layers.Conv2D(gf_dim, (5, 5), padding='same'),
+
+            layers.BatchNormalization(name='bn'),
+            layers.ReLU(),
+            layers.UpSampling2D(),
+            layers.Conv2D(3, (5, 5), padding='same'),
+            layers.Activation('tanh')
         ])
 
-    def call(self, x, training=None):
-        x = self.seq(x, training=training)
-        x = tf.nn.tanh(x)
-        return x
+    def call(self, inputs, training=None):
+        outputs = self.seq(inputs, training=training)
+        return outputs
 
     
 class ResNetGenerator(tf.keras.Model):
@@ -246,26 +250,26 @@ class DCDiscriminator(tf.keras.Model):
     def __init__(self,
                  df_dim=64,
                  name='discriminator'):
-        super(DCDiscriminator, self).__init__(name=name)
+        super().__init__(name=name)
         self.df_dim = df_dim
 
         self.seq = tf.keras.Sequential([
-            layers.Conv2D(df_dim, (5, 5), (2, 2), 'same', name='conv_1'),
+            layers.Conv2D(df_dim, (5, 5), (2, 2), 'same'),
             layers.LeakyReLU(),
-            layers.Dropout(0.3, name='drop_1'),
-            layers.Conv2D(df_dim*2, (5, 5), (2, 2), 'same', name='conv_2'),
+            layers.Conv2D(df_dim*2, (5, 5), (2, 2), 'same'),
             layers.LeakyReLU(),
-            layers.Dropout(0.3, name='drop_2'),
-            layers.Conv2D(df_dim*4, (5, 5), (2, 2), 'same', name='snconv_3'),
+            layers.Conv2D(df_dim*4, (5, 5), (2, 2), 'same'),
             layers.LeakyReLU(),
-            layers.Dropout(0.3, name='drop_3'),
             layers.Flatten(),
-            layers.Dense(1, name='fc')
+            layers.Dense(128),
+            layers.LeakyReLU(),
+            layers.Dropout(0.5),
+            layers.Dense(1)
         ])
 
-    def call(self, x, training=None):
-        x = self.seq(x, training=training)
-        return x
+    def call(self, inputs, training=None):
+        outputs = self.seq(inputs, training=training)
+        return outputs
 
 
 class ResNetDiscriminator(tf.keras.Model):
