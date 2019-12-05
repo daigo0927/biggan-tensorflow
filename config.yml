@@ -10,7 +10,7 @@ data:
     vertical_flip: false
     rescale: 0 # 0: unscale
   flow:
-    directory: '/Users/daigo.hiroka/Data/stanford-dogs/images/Images'
+    directory: 'Images' # e.g. stanford-dogs dataset at current directory
     target_size: [64, 64] # only accepted
     batch_size: 32
 
