@@ -124,7 +124,7 @@ def main():
             logdir = tmpdir
             config['train']['epochs'] = 1
         else:
-            logd = config['output_dir']
+            logd = config['train']['output_dir']
             logdir = os.path.join(logd, datetime.now().strftime("%Y-%m-%dT%H-%M"))
             if not os.path.exists(logdir):
                 os.makedirs(logdir)

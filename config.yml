@@ -25,7 +25,7 @@ model:
     name: 'generator'
     
 train:
-  epochs: 1
+  epochs: 10
   discriminator_optimizer:
     learning_rate: 0.0001
     beta_1: 0
@@ -37,3 +37,4 @@ train:
   z_dim: 120
   loss: 'bce' # hinge
   record_step: 100
+  output_dir: 'result'
