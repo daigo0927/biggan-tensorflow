@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
-import ops
+from . import ops
 
 
 def usample(x):
