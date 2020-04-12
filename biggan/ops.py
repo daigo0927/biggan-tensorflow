@@ -1,26 +1,49 @@
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras import layers, initializers
+
+# coding=utf-8
+# Copyright 2020 The TensorFlow GAN Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 
-def _l2normalize(v, eps=1e-12):
-    return v / (tf.reduce_sum(v**2)**0.5 + eps)
+def spectral_normalize(weights,
+                       u_var,
+                       n_power_iters,
+                       training,
+                       name='spectral_normalize'):
+    with tf.name_scope(name):
+        w_shape = weights.get_shape()  # (k, k, ch1, ch2): conv2d case
+        w = tf.reshape(weights, [-1, w_shape[-1]])  # (kxkxch1, ch2)
 
+        u = u_var  # (kxkxch1, 1)
+        for _ in range(num_iters):
+            v = tf.nn.l2_normalize(tf.matmul(w, u,
+                                             transpose_a=True))  # (ch2, 1)
+            u = tf.nn.l2_normalize(tf.matmul(w, v))  # (kxkxch1, 1)
 
-def spectral_norm(weights, u, num_iters, training):
-    w_shape = weights.shape.as_list()
-    w_mat = tf.reshape(weights, [-1, w_shape[-1]])
+        if training:
+            u_var.assign(u)
+            u = tf.identity(u)
 
-    u_ = u
-    for _ in range(num_iters):
-        v_ = _l2normalize(tf.matmul(u_, w_mat, transpose_b=True))
-        u_ = _l2normalize(tf.matmul(v_, w_mat))
+        u = tf.stop_gradient(u)
+        v = tf.stop_gradient(v)
 
-    sigma = tf.squeeze(tf.matmul(tf.matmul(v_, w_mat), u_, transpose_b=True))
-    w_mat /= sigma
-    w_bar = tf.reshape(w_mat, w_shape)
-    if training:
-        u.assign(u_)
-    return w_bar
+        # Spectral norm
+        sigma = tf.matmul(tf.matmul(u, w, transpose_a=True), v)  # (1, 1)
+        # Normalization
+        w_normalized = w / sigma
+        return tf.reshape(w_normalized, w_shape)
 
 
 class SNConv2d(layers.Layer):
@@ -29,27 +52,44 @@ class SNConv2d(layers.Layer):
                  kernel_size=(3, 3),
                  strides=(2, 2),
                  sn_iters=1,
-                 initializer=tf.initializers.orthogonal(),
+                 kernel_initializer=initializers.Orthogonal(),
+                 bias_initializer=initializers.Zeros(),
+                 u_initializer=initializers.RandomNomral(),
                  name='snconv2d'):
         super(SNConv2d, self).__init__(name=name)
         self.filters = filters
+        assert len(kernel_size) == 2, 'kernel_size must be 2 length'
         self.kernel_size = kernel_size
+        assert len(strides) == 2, 'strides must be 2 length'
         self.strides = strides
         self.sn_iters = sn_iters
-        self.initializer = initializer
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.u_initializer = u_initializer
 
     def build(self, input_shape):
         in_channels = int(input_shape[-1])
         kernel_shape = [*self.kernel_size, in_channels, self.filters]
-        self.kernel = self.add_weight('kernel', shape=kernel_shape,
-                                      initializer=self.initializer)
-        self.bias = self.add_weight('bias', shape=[self.filters],
-                                    initializer=tf.zeros_initializer())
-        self.u = self.add_weight('u', shape=[1, self.filters], trainable=False)
+        u_dim = self.kernel_size[0] * self.kernel_size[1] * in_channels
 
-    def call(self, x, training=None):
-        w_bar = spectral_norm(self.kernel, self.u, self.sn_iters, training)
-        x = tf.nn.conv2d(x, w_bar, strides=[1, *self.strides, 1], padding='SAME')
+        self.kernel = self.add_weight('kernel',
+                                      shape=kernel_shape,
+                                      initializer=self.kernel_initializer)
+        self.bias = self.add_weight('bias',
+                                    shape=[self.filters],
+                                    initializer=self.bias_initializer)
+        self.u = self.add_weight('u',
+                                 shape=[u_dim, 1],
+                                 trainable=False,
+                                 initializer=self.u_initializer)
+
+    def call(self, inputs, training=None):
+        w_bar = spectral_normalize(self.kernel, self.u, self.sn_iters,
+                                   training)
+        x = tf.nn.conv2d(inputs,
+                         w_bar,
+                         strides=[1, *self.strides, 1],
+                         padding='SAME')
         x = tf.nn.bias_add(x, self.bias)
         return x
 
@@ -68,7 +108,8 @@ class SNConv1x1(layers.Layer):
     def build(self, input_shape):
         in_channels = int(input_shape[-1])
         kernel_shape = [1, 1, in_channels, self.filters]
-        self.kernel = self.add_weight('kernel', shape=kernel_shape,
+        self.kernel = self.add_weight('kernel',
+                                      shape=kernel_shape,
                                       initializer=self.initializer)
         self.u = self.add_weight('u', shape=[1, self.filters], trainable=False)
 
@@ -94,10 +135,12 @@ class SNLinear(layers.Layer):
     def build(self, input_shape):
         in_features = int(input_shape[-1])
         kernel_shape = [in_features, self.units]
-        self.kernel = self.add_weight('kernel', shape=kernel_shape,
+        self.kernel = self.add_weight('kernel',
+                                      shape=kernel_shape,
                                       initializer=self.initializer)
         if self.use_bias:
-            self.bias = self.add_weight('bias', shape=[self.units],
+            self.bias = self.add_weight('bias',
+                                        shape=[self.units],
                                         initializer=tf.zeros_initializer())
         self.u = self.add_weight('u', shape=[1, self.units], trainable=False)
 
@@ -147,14 +190,16 @@ class SNEmbedding(layers.Layer):
 
     def build(self, input_shape):
         embed_shape = [self.num_classes, self.embedding_size]
-        self.embed_map = self.add_weight('embed_map', shape=embed_shape,
+        self.embed_map = self.add_weight('embed_map',
+                                         shape=embed_shape,
                                          initializer=self.initializer)
-        self.u = self.add_weight('u', shape=[1, self.num_classes],
+        self.u = self.add_weight('u',
+                                 shape=[1, self.num_classes],
                                  trainable=False)
 
     def call(self, x, training=None):
-        embed_map_bar_T = spectral_norm(tf.transpose(self.embed_map),
-                                        self.u, self.sn_iters, training)
+        embed_map_bar_T = spectral_norm(tf.transpose(self.embed_map), self.u,
+                                        self.sn_iters, training)
         embed_map_bar = tf.transpose(embed_map_bar_T)
         x = tf.nn.embedding_lookup(embed_map_bar, x)
         return x
@@ -169,42 +214,43 @@ class SelfAttention(layers.Layer):
 
     def build(self, input_shape):
         in_channels = int(input_shape[-1])
-        self.conv_theta = SNConv1x1(in_channels//8,
+        self.conv_theta = SNConv1x1(in_channels // 8,
                                     initializer=self.initializer,
                                     name='sn_conv_theta')
-        self.conv_phi = SNConv1x1(in_channels//8,
+        self.conv_phi = SNConv1x1(in_channels // 8,
                                   initializer=self.initializer,
                                   name='sn_conv_phi')
-        self.conv_g = SNConv1x1(in_channels//2,
+        self.conv_g = SNConv1x1(in_channels // 2,
                                 initializer=self.initializer,
                                 name='sn_conv_g')
         self.conv_attn = SNConv1x1(in_channels,
                                    initializer=self.initializer,
                                    name='sn_conv_attn')
-        self.sigma = self.add_weight('sigma', shape=[],
+        self.sigma = self.add_weight('sigma',
+                                     shape=[],
                                      initializer=tf.zeros_initializer())
 
     def call(self, x, training=None):
         batch_size, h, w, in_channels = map(int, x.shape.as_list())
-        location_num = h*w
-        downsampled_num = location_num//4
+        location_num = h * w
+        downsampled_num = location_num // 4
 
         theta = self.conv_theta(x, training=training)
-        theta = tf.reshape(theta, [batch_size, location_num, in_channels//8])
+        theta = tf.reshape(theta, [batch_size, location_num, in_channels // 8])
 
         phi = self.conv_phi(x, training=training)
         phi = tf.nn.max_pool(phi, ksize=[2, 2], strides=2, padding='VALID')
-        phi = tf.reshape(phi, [batch_size, downsampled_num, in_channels//8])
+        phi = tf.reshape(phi, [batch_size, downsampled_num, in_channels // 8])
 
         attn = tf.matmul(theta, phi, transpose_b=True)
         attn = tf.nn.softmax(attn)
 
         g = self.conv_g(x, training=training)
         g = tf.nn.max_pool(g, ksize=[2, 2], strides=2, padding='VALID')
-        g = tf.reshape(g, [batch_size, downsampled_num, in_channels//2])
+        g = tf.reshape(g, [batch_size, downsampled_num, in_channels // 2])
 
         attn_g = tf.matmul(attn, g)
-        attn_g = tf.reshape(attn_g, [batch_size, h, w, in_channels//2])
+        attn_g = tf.reshape(attn_g, [batch_size, h, w, in_channels // 2])
         attn_g = self.conv_attn(attn_g, training=training)
 
         return x + self.sigma * attn_g
@@ -223,13 +269,18 @@ class ConditionalBatchNorm(layers.Layer):
         self.axis = axis
         self.momentum = momentum
         self.epsilon = epsilon
-        self.bn = tf.keras.layers.BatchNormalization(axis, momentum, epsilon,
-                                                     center=False, scale=False,
+        self.bn = tf.keras.layers.BatchNormalization(axis,
+                                                     momentum,
+                                                     epsilon,
+                                                     center=False,
+                                                     scale=False,
                                                      name='bn')
-        self.linear_beta = SNLinear(num_features, use_bias=False,
+        self.linear_beta = SNLinear(num_features,
+                                    use_bias=False,
                                     initializer=initializer,
                                     name='sn_linear_beta')
-        self.linear_gamma = SNLinear(num_features, use_bias=False,
+        self.linear_gamma = SNLinear(num_features,
+                                     use_bias=False,
                                      initializer=initializer,
                                      name='sn_linear_gamma')
 
@@ -243,7 +294,7 @@ class ConditionalBatchNorm(layers.Layer):
         x = self.bn(x, training=training)
         x = (1.0 + gamma) * x + beta
         return x
-        
+
 
 if __name__ == '__main__':
     # Create layer instances
@@ -267,13 +318,17 @@ if __name__ == '__main__':
     cbn = ConditionalBatchNorm(input_dim)
 
     # Create sample inputs
-    weights = tf.random.normal((*kernel_size, input_dim, output_dim), dtype=tf.float32)
+    weights = tf.random.normal((*kernel_size, input_dim, output_dim),
+                               dtype=tf.float32)
     weights = tf.Variable(weights)
     u = tf.random.normal((1, output_dim), dtype=tf.float32)
     u = tf.Variable(u)
     images = tf.random.normal((batch_size, 64, 64, 3), dtype=tf.float32)
     features = tf.random.normal((batch_size, 100), dtype=tf.float32)
-    labels = tf.random.uniform((batch_size, ), minval=0, maxval=10, dtype=tf.dtypes.int32)
+    labels = tf.random.uniform((batch_size, ),
+                               minval=0,
+                               maxval=10,
+                               dtype=tf.dtypes.int32)
 
     training = True
     # Singular value estimation of spectral normalization
@@ -282,15 +337,16 @@ if __name__ == '__main__':
     import scipy as sp
     w_np = weights.numpy().reshape((-1, output_dim))
     u_np, s_np, vt_np = sp.linalg.svd(w_np.T)
-    u0_np = u_np[:,0]
+    u0_np = u_np[:, 0]
     for _ in range(100):
         _ = sn(weights, u, num_iters, training)
     u_pseudo = u.numpy()
-    cossim = np.abs(np.sum(u0_np*u_pseudo)) / norm(u0_np) / norm(u_pseudo)
+    cossim = np.abs(np.sum(u0_np * u_pseudo)) / norm(u0_np) / norm(u_pseudo)
     if cossim > 0.95:
         print(f'Singular vector similarity: {cossim}')
     else:
-        raise ValueError(f'Singular vector estimation failed, cosine similarity: {cossim}')
+        raise ValueError(
+            f'Singular vector estimation failed, cosine similarity: {cossim}')
     # Forward into layers
     _ = conv2d(images, training=training)
     _ = conv1x1(images, training=training)
@@ -299,16 +355,18 @@ if __name__ == '__main__':
     _ = embed(labels, training=training)
     _ = self_attn(images, training=training)
     _ = cbn([images, features], training=training)
-    
+
     training = False
     for _ in range(100):
         _ = sn(weights, u, num_iters, training)
     u_fix = u.numpy()
-    cossim = np.abs(np.sum(u_pseudo*u_fix)) / norm(u_pseudo) / norm(u_fix)
+    cossim = np.abs(np.sum(u_pseudo * u_fix)) / norm(u_pseudo) / norm(u_fix)
     if cossim > 0.95:
         print(f'Singular vector preservation : {cossim}')
     else:
-        raise ValueError(f'Singular vector preservation failed, cosine similarity: {cossim}')
+        raise ValueError(
+            f'Singular vector preservation failed, cosine similarity: {cossim}'
+        )
     _ = conv2d(images, training=training)
     _ = conv1x1(images, training=training)
     _ = linear(features, training=training)
