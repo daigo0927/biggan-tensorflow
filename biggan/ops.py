@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers, initializers
 
+# COPYRIGHT for implementation of spectral normalization.
 # coding=utf-8
 # Copyright 2020 The TensorFlow GAN Authors.
 #
@@ -17,36 +18,48 @@ from tensorflow.keras import layers, initializers
 # limitations under the License.
 
 
-def spectral_normalize(weights,
-                       u_var,
-                       n_power_iters,
-                       training,
-                       name='spectral_normalize'):
-    with tf.name_scope(name):
-        w_shape = weights.get_shape()  # (k, k, ch1, ch2): conv2d case
-        w = tf.reshape(weights, [-1, w_shape[-1]])  # (kxkxch1, ch2)
+def SpectralNormalization(layers.Layer):
+    def __init__(self,
+                 n_power_iters=1,
+                 initializer=initializers.RandomNomral(),
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.n_power_iters = n_power_iters
+        self.initializer = initializer
 
-        u = u_var  # (kxkxch1, 1)
+    def build(self, input_shape):
+        # Dummy weights for shape inference
+        w = tf.reshape(tf.zeros(input_shape), [-1, input_shape[-1]])
+        self.u = self.add_weight('u',
+                                 shape=[w.shape[0], 1],
+                                 dtype=tf.float32,
+                                 initializers=self.initializer,
+                                 trainable=False)
+
+    def call(self, inputs, training=None):
+        w_shape = inputs.get_shape() # Conv2D case: (k, k, ch1, ch2)
+        w = tf.reshpae(inputs, [-1, w_shape[-1]]) # (kxkxch1, ch2)
+        
+        u = self.u # (kxkxch1, 1)
         for _ in range(num_iters):
-            v = tf.nn.l2_normalize(tf.matmul(w, u,
-                                             transpose_a=True))  # (ch2, 1)
+            v = tf.nn.l2_normalize(tf.matmul(w, u, transpose_a=True))  # (ch2, 1)
             u = tf.nn.l2_normalize(tf.matmul(w, v))  # (kxkxch1, 1)
 
         if training:
-            u_var.assign(u)
+            self.u.assign(u)
             u = tf.identity(u)
 
         u = tf.stop_gradient(u)
         v = tf.stop_gradient(v)
 
         # Spectral norm
-        sigma = tf.matmul(tf.matmul(u, w, transpose_a=True), v)  # (1, 1)
+        norm = tf.matmul(tf.matmul(u, w, transpose_a=True), v)  # (1, 1)
         # Normalization
-        w_normalized = w / sigma
+        w_normalized = w / norm
         return tf.reshape(w_normalized, w_shape)
 
 
-class SNConv2d(layers.Layer):
+class SNConv2D(layers.Layer):
     def __init__(self,
                  filters,
                  kernel_size=(3, 3),
@@ -55,8 +68,8 @@ class SNConv2d(layers.Layer):
                  kernel_initializer=initializers.Orthogonal(),
                  bias_initializer=initializers.Zeros(),
                  u_initializer=initializers.RandomNomral(),
-                 name='snconv2d'):
-        super(SNConv2d, self).__init__(name=name)
+                 **kwargs):
+        super().__init__(**kwargs)
         self.filters = filters
         assert len(kernel_size) == 2, 'kernel_size must be 2 length'
         self.kernel_size = kernel_size
@@ -68,9 +81,8 @@ class SNConv2d(layers.Layer):
         self.u_initializer = u_initializer
 
     def build(self, input_shape):
-        in_channels = int(input_shape[-1])
+        in_channels = input_shape[-1]
         kernel_shape = [*self.kernel_size, in_channels, self.filters]
-        u_dim = self.kernel_size[0] * self.kernel_size[1] * in_channels
 
         self.kernel = self.add_weight('kernel',
                                       shape=kernel_shape,
@@ -78,130 +90,97 @@ class SNConv2d(layers.Layer):
         self.bias = self.add_weight('bias',
                                     shape=[self.filters],
                                     initializer=self.bias_initializer)
-        self.u = self.add_weight('u',
-                                 shape=[u_dim, 1],
-                                 trainable=False,
-                                 initializer=self.u_initializer)
+        self.sn = SpectralNormalization(n_power_iters=self.sn_iters,
+                                        initializer=self.u_initializer,
+                                        name='spectral_normalization')
 
     def call(self, inputs, training=None):
-        w_bar = spectral_normalize(self.kernel, self.u, self.sn_iters,
-                                   training)
+        kernel = self.sn(self.kernel, training)
         x = tf.nn.conv2d(inputs,
-                         w_bar,
+                         kernel,
                          strides=[1, *self.strides, 1],
                          padding='SAME')
         x = tf.nn.bias_add(x, self.bias)
         return x
 
 
-class SNConv1x1(layers.Layer):
-    def __init__(self,
-                 filters,
-                 sn_iters=1,
-                 initializer=tf.initializers.orthogonal(),
-                 name='snconv1x1'):
-        super(SNConv1x1, self).__init__(name=name)
-        self.filters = filters
-        self.sn_iters = sn_iters
-        self.initializer = initializer
-
-    def build(self, input_shape):
-        in_channels = int(input_shape[-1])
-        kernel_shape = [1, 1, in_channels, self.filters]
-        self.kernel = self.add_weight('kernel',
-                                      shape=kernel_shape,
-                                      initializer=self.initializer)
-        self.u = self.add_weight('u', shape=[1, self.filters], trainable=False)
-
-    def call(self, x, training=None):
-        w_bar = spectral_norm(self.kernel, self.u, self.sn_iters, training)
-        x = tf.nn.conv2d(x, w_bar, strides=[1, 1, 1, 1], padding='SAME')
-        return x
+def SNConv1x1(filters,
+              sn_iters=1,
+              kernel_initializer=initializers.Orthogonal(),
+              bias_initializer=initializers.Zeros(),
+              u_initializer=initializers.RandomNomral(),
+              **kwargs):
+    return SNConv2D(filters=filters,
+                    kernel_size=(1, 1),
+                    strides=(1, 1),
+                    sn_iters=sn_iters,
+                    kernel_initializer=kernel_initializer,
+                    bias_initializer=bias_initializer,
+                    u_initializer=u_initializer,
+                    **kwargs)
 
 
 class SNLinear(layers.Layer):
     def __init__(self,
                  units,
-                 use_bias=True,
                  sn_iters=1,
-                 initializer=tf.initializers.orthogonal(),
-                 name='snlinear'):
-        super(SNLinear, self).__init__(name=name)
+                 kernel_initializer=initializers.Orthogonal(),
+                 bias_initializer=initializers.Zeros(),
+                 u_initializer=initializers.RandomNomral(),
+                 **kwargs):
+        super().__init__(**kwargs)
         self.units = units
-        self.use_bias = use_bias
         self.sn_iters = sn_iters
-        self.initializer = initializer
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.u_initializer = u_initializer
 
     def build(self, input_shape):
-        in_features = int(input_shape[-1])
+        in_features = input_shape[-1]
         kernel_shape = [in_features, self.units]
         self.kernel = self.add_weight('kernel',
                                       shape=kernel_shape,
-                                      initializer=self.initializer)
-        if self.use_bias:
-            self.bias = self.add_weight('bias',
-                                        shape=[self.units],
-                                        initializer=tf.zeros_initializer())
-        self.u = self.add_weight('u', shape=[1, self.units], trainable=False)
+                                      initializer=self.kernel_initializer)
+        self.bias = self.add_weight('bias',
+                                    shape=[self.units],
+                                    initializer=self.bias_initializer)
+        self.sn = SpectralNormalization(n_power_iters=self.sn_iters,
+                                        initializer=self.u_initializer,
+                                        name='spectral_normalization')
 
-    def call(self, x, training=None):
-        w_bar = spectral_norm(self.kernel, self.u, self.sn_iters, training)
-        x = tf.matmul(x, w_bar)
-        if self.use_bias:
-            return x + self.bias
-        else:
-            return x
-
-
-# class Embedding(layers.Layer):
-#     def __init__(self,
-#                  num_classes,
-#                  embedding_size,
-#                  initializer=tf.initializers.orthogonal(),
-#                  name='embedding'):
-#         super(Embedding, self).__init__(name=name)
-#         self.num_classes = num_classes
-#         self.embedding_size = embedding_size
-#         self.initializer = initializer
-
-#     def build(self, input_shape):
-#         embed_shape = [self.num_classes, self.embedding_size]
-#         self.embed_map = self.add_weight('embed_map', shape=embed_shape,
-#                                          dtype=tf.float32,
-#                                          initializer=self.initializer)
-
-#     def call(self, x):
-#         x = tf.nn.embedding_lookup(self.embed_map, x)
-#         return x
+    def call(self, inputs, training=None):
+        kernel = self.sn(self.kernel, training)
+        x = tf.matmul(inputs, kernel) + self.bias
+        return x
 
 
 class SNEmbedding(layers.Layer):
     def __init__(self,
-                 num_classes,
-                 embedding_size,
+                 input_dim,
+                 output_dim,
                  sn_iters=1,
-                 initializer=tf.initializers.orthogonal(),
-                 name='snembedding'):
-        super(SNEmbedding, self).__init__(name=name)
-        self.num_classes = num_classes
-        self.embedding_size = embedding_size
+                 embeddings_initializer=initializers.RandomUniform(),
+                 u_initializer=initializers.RandomNomral(),
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.input_dim = input_dim
+        self.output_dim = output_dim
         self.sn_iters = sn_iters
-        self.initializer = initializer
+        self.embeddings_initializer = embeddings_initializer
+        self.u_initializer = u_initializer
 
     def build(self, input_shape):
-        embed_shape = [self.num_classes, self.embedding_size]
-        self.embed_map = self.add_weight('embed_map',
-                                         shape=embed_shape,
-                                         initializer=self.initializer)
-        self.u = self.add_weight('u',
-                                 shape=[1, self.num_classes],
-                                 trainable=False)
+        self.embeddings = self.add_weight('embeddings',
+                                          shape=[self.input_dim, self.output_dim],
+                                          initializer=self.embeddings_initializer)
+        self.sn = SpectralNormalization(n_power_iters=self.sn_iters,
+                                        initializer=self.u_initializer,
+                                        name='spectral_normalization')
 
-    def call(self, x, training=None):
-        embed_map_bar_T = spectral_norm(tf.transpose(self.embed_map), self.u,
-                                        self.sn_iters, training)
-        embed_map_bar = tf.transpose(embed_map_bar_T)
-        x = tf.nn.embedding_lookup(embed_map_bar, x)
+    def call(self, inputs, training=None):
+        embeddings_T = self.sn(tf.transpose(self.embeddings), training)
+        embeddings = tf.transpose(embeddings_T)
+        x = tf.nn.embedding_lookup(embed_map_bar, inputs)
         return x
 
 
