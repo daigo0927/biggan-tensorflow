@@ -41,7 +41,7 @@ class SpectralNormalization(layers.Layer):
         w = tf.reshape(inputs, [-1, w_shape[-1]])  # (kxkxch1, ch2)
 
         u = self.u  # (kxkxch1, 1)
-        for _ in range(num_iters):
+        for _ in range(self.n_power_iters):
             v = tf.nn.l2_normalize(tf.matmul(w, u,
                                              transpose_a=True))  # (ch2, 1)
             u = tf.nn.l2_normalize(tf.matmul(w, v))  # (kxkxch1, 1)
@@ -292,9 +292,6 @@ class ConditionalBatchNorm(layers.Layer):
             'bias_initializer': bias_initializer,
             'u_initializer': u_initializer
         }
-
-        # TODO: implement use_bias argment, referred as https://github.com/huggingface/pytorch-pretrained-BigGAN/blob/master/pytorch_pretrained_biggan/model.py
-        # official TF implementation: https://github.com/tensorflow/tensorflow/blob/v2.1.0/tensorflow/python/keras/layers/convolutional.py#L48
 
     def build(self, input_shape):
         x_shape, condition_shape = input_shape
