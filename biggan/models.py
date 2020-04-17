@@ -1,13 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras import layers, initializers
 
-from . import ops
-
-
-def upsampling(x, method='bilinear', name=None):
-    _, h, w, _ = x.shape.as_list()
-    x = tf.image.resize(x, [2 * h, 2 * w], method=method, name=name)
-    return x
+# from . import ops
+import ops
 
 
 class GBlock(layers.Layer):
@@ -193,68 +188,100 @@ class ResNetGenerator(tf.keras.Model):
         return seq
 
 
-def dsample(x):
-    x = tf.nn.avg_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'VALID')
-    return x
-
-
 class DBlock(layers.Layer):
-    def __init__(self, input_dim, filters, downsample=True, name='block'):
-        super(DBlock, self).__init__(name=name)
-        self.input_dim = input_dim
+    def __init__(self,
+                 filters,
+                 downsample=True,
+                 preactivation=True,
+                 kernel_initializer=initializers.Orthogonal(),
+                 bias_initializer=initializers.Zeros(),
+                 u_initializer=initializers.RandomNormal(),
+                 **kwargs):
+        super().__init__(**kwargs)
         self.filters = filters
         self.downsample = downsample
+        self.preactivation = preactivation
 
-        self.conv1 = ops.SNConv2d(filters, (3, 3), (1, 1), name='snconv_1')
-        self.conv2 = ops.SNConv2d(filters, (3, 3), (1, 1), name='snconv_2')
-        if downsample:
-            self.conv3 = ops.SNConv2d(filters, (1, 1), (1, 1), name='snconv_3')
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.u_initializer = u_initializer
 
-    def call(self, x, training=None):
-        fx = tf.nn.relu(x)
-        fx = self.conv1(fx, training=training)
-        fx = tf.nn.relu(fx)
-        fx = self.conv2(fx, training=training)
+        self._init_params = {
+            'kernel_initializer': kernel_initializer,
+            'bias_initializer': bias_initializer,
+            'u_initializer': u_initializer
+        }
+
+    def build(self, input_shape):
+        self.activation = layers.ReLU()
+        if self.downsample:
+            self.downsampling = layers.AvgPool2D(pool_size=(2, 2))
+
+        self.conv_1 = ops.SNConv2D(self.filters, (3, 3), (1, 1),
+                                   name='snconv_1',
+                                   **self._init_params)
+        self.conv_2 = ops.SNConv2D(self.filters, (3, 3), (1, 1),
+                                   name='snconv_2',
+                                   **self._init_params)
+        self.conv_sc = ops.SNConv2D(self.filters, (1, 1), (1, 1),
+                                    name='snconv_sc',
+                                    **self._init_params)
+
+    def call(self, inputs, training=None):
+        if self.preactivation:
+            x = self.activation(inputs)
+        else:
+            x = inputs
+
+        fx = self.conv_1(x, training)
+        fx = self.conv_2(self.activation(fx), training)
 
         if self.downsample:
-            fx = dsample(fx)
-            x = self.conv3(x, training=training)
-            x = dsample(x)
+            fx = self.downsampling(fx)
+            x = self.downsampling(x)
+
+        x = self.conv_sc(x, training)
         return x + fx
 
 
 class Discriminator(tf.keras.Model):
-    def __init__(self, num_classes, df_dim=64, name='discriminator'):
-        super(Discriminator, self).__init__(name=name)
+    def __init__(self, num_classes, base_dim=64, **kwargs):
+        super().__init__(**kwargs)
         self.num_classes = num_classes
-        self.df_dim = df_dim
+        self.base_dim = base_dim
 
-        self.block1 = DBlock(3, df_dim, name='block_1')
-        self.attn = ops.SelfAttention(name='attn')
-        self.block2 = DBlock(df_dim, df_dim * 2, name='block_2')
-        self.block3 = DBlock(df_dim * 2, df_dim * 4, name='block_3')
-        self.block4 = DBlock(df_dim * 4, df_dim * 8, name='block_4')
-        self.block5 = DBlock(df_dim * 8,
-                             df_dim * 8,
-                             downsample=False,
-                             name='block_5')
+    def build(self, inputs_shape):
+        self.block_1 = DBlock(self.base_dim,
+                              preactivation=False,
+                              name='block_1')
+        self.attn = ops.SNSelfAttention(name='attn')
+        self.block_2 = DBlock(self.base_dim * 2, name='block_2')
+        self.block_3 = DBlock(self.base_dim * 4, name='block_3')
+        self.block_4 = DBlock(self.base_dim * 8, name='block_4')
+        self.block_5 = DBlock(self.base_dim * 16,
+                              downsample=False,
+                              name='block_5')
+
+        self.activation = layers.ReLU()
 
         self.linear = ops.SNLinear(1, name='linear_out')
-        self.embed = ops.SNEmbedding(num_classes, df_dim * 8, name='embed')
+        self.embed = ops.SNEmbedding(num_classes,
+                                     self.base_dim * 16,
+                                     name='embed')
 
     def call(self, inputs, training=True):
         x, labels = inputs
-        x = self.block1(x, training=training)
-        x = self.attn(x, training=training)
-        x = self.block2(x, training=training)
-        x = self.block3(x, training=training)
-        x = self.block4(x, training=training)
-        x = self.block5(x, training=training)
+        x = self.block_1(x, training)
+        x = self.attn(x, training)
+        x = self.block_2(x, training)
+        x = self.block_3(x, training)
+        x = self.block_4(x, training)
+        x = self.block_5(x, training)
 
-        x = tf.nn.relu(x)
+        x = self.activation(x)
         x = tf.reduce_sum(x, axis=[1, 2])
-        out = self.linear(x, training=training)
-        embed = self.embed(labels)
+        out = self.linear(x, training)
+        embed = self.embed(labels, training)
         out += tf.reduce_sum(x * embed, axis=-1, keepdims=True)
         return out
 
@@ -330,17 +357,69 @@ class ResNetDiscriminator(tf.keras.Model):
         return seq
 
 
+class BigGAN64(tf.keras.Model):
+    def __init__(self, latent_dim, num_classes, generator, discriminator,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
+        self.generator = generator
+        self.discriminator = discriminator
+
+    def compile(self, g_optimizer, d_optimizer, g_loss_fn, d_loss_fn):
+        super().compile()
+        self.g_optimizer = g_optimizer
+        self.d_optimizer = d_optimizer
+        self.g_loss_fn = g_loss_fn
+        self.d_loss_fn = d_loss_fn
+
+    def train_step(self, inputs_real):
+        images_real, labels_real = inputs_real
+
+        batch_size = tf.shape(images_real)[0]
+
+        zs = tf.random.normal(shape=(batch_size, self.latent_dim))
+        labels_fake = tf.random.uniform((batch_size, ),
+                                        0,
+                                        self.num_classes,
+                                        dtype=tf.int32)
+        images_fake = self.generator([zs, labels_fake], training=False)
+
+        images = tf.concat([images_real, images_fake], axis=0)
+        labels = tf.concat([labels_real, labels_fake], axis=0)
+        with tf.GradientTape() as tape:
+            logits = self.discriminator([images, labels], training=True)
+            logits_real, logits_fake = tf.split(logits, 2, axis=0)
+            d_loss = self.d_loss_fn(logits_real, logits_fake)
+        grads = tape.gradient(d_loss, self.discriminator.trainable_weights)
+        self.d_optimizer.apply_gradients(
+            zip(grads, self.discriminator.trainable_weights))
+
+        zs = tf.random.normal(shape=(batch_size, self.latent_dim))
+        labels_fake = tf.random.uniform((batch_size, ),
+                                        0,
+                                        self.num_classes,
+                                        dtype=tf.int32)
+        with tf.GradientTape() as tape:
+            images_fake = self.generator([zs, labels_fake], training=True)
+            logits_fake = self.discriminator([images_fake, labels_fake],
+                                             training=False)
+            g_loss = self.g_loss_fn(logits_fake)
+        grads = tape.gradient(g_loss, self.generator.trainable_weights)
+        self.g_optimizer.apply_gradients(
+            zip(grads, self.generator.trainable_weights))
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+
 if __name__ == '__main__':
-    batch_size = 4
-    z_dim = 120
+    batch_size = 1
+    z_dim = 100
     image_size = (64, 64)
     num_classes = 10
-    gf_dim = 64
-    df_dim = 64
+    base_dim = 64
     embedding_size = 128
 
     # sample definition
-    z = tf.random.normal((batch_size, z_dim), dtype=tf.float32)
     images = tf.random.normal((batch_size, *image_size, 3), dtype=tf.float32)
     labels = tf.random.uniform((batch_size, ),
                                minval=0,
@@ -349,21 +428,38 @@ if __name__ == '__main__':
 
     # create model
     generator = Generator(num_classes,
-                          gf_dim,
+                          base_dim,
                           embedding_size,
                           name='generator')
-    discriminator = Discriminator(num_classes, df_dim, name='discriminator')
+    discriminator = Discriminator(num_classes, base_dim, name='discriminator')
+    biggan = BigGAN64(z_dim,
+                      num_classes,
+                      generator,
+                      discriminator,
+                      name='biggan')
 
-    training = True
-    print('Validating training loop ...')
-    for _ in range(10):
-        images_fake = generator([z, labels], training=training)
-        logits_real = discriminator([images, labels], training=training)
+    from losses import d_hinge_loss, g_hinge_loss
+    biggan.compile(g_optimizer=tf.keras.optimizers.Adam(),
+                   d_optimizer=tf.keras.optimizers.Adam(),
+                   g_loss_fn=g_hinge_loss,
+                   d_loss_fn=d_hinge_loss)
 
-    training = False
-    print('Validating test loop ...')
-    for _ in range(10):
-        image_fake = generator([z, labels], training=training)
-        logits_fake = discriminator([images_fake, labels], training=training)
+    biggan.fit(images, labels, batch_size=1, epochs=1)
 
+    # @tf.function
+    # def train_step(images_real, labels_real):
+    #     losses = biggan.train_step([images_real, labels_real])
+    #     return losses
+
+    # from datetime import datetime
+    # stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    # logdir = 'logs_test/func/%s' % stamp
+    # writer = tf.summary.create_file_writer(logdir)
+
+    # tf.summary.trace_on(graph=True, profiler=True)
+    # outputs = train_step(images, labels)
+    # with writer.as_default():
+    #     tf.summary.trace_export(name='biggan_trace',
+    #                             step=0,
+    #                             profiler_outdir=logdir)
     print('-------------- Completed -----------------')
