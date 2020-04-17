@@ -264,7 +264,7 @@ class Discriminator(tf.keras.Model):
         self.activation = layers.ReLU()
 
         self.linear = ops.SNLinear(1, name='linear_out')
-        self.embed = ops.SNEmbedding(num_classes,
+        self.embed = ops.SNEmbedding(self.num_classes,
                                      self.base_dim * 16,
                                      name='embed')
 
