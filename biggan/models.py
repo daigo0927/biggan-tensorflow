@@ -1,8 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers, initializers
 
-# from . import ops
-import ops
+from . import ops
 
 
 class GBlock(layers.Layer):
