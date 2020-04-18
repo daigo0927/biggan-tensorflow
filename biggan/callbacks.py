@@ -29,7 +29,7 @@ class SaveGeneratedImages(tf.keras.callbacks.Callback):
         self.labels_fake = None
 
     def on_epoch_end(self, epoch, logs=None):
-        if self.zs is not None and self.labels_fake is not None:
+        if self.zs is None and self.labels_fake is None:
             latent_dim = self.model.latent_dim
             num_classes = self.model.num_classes
 
