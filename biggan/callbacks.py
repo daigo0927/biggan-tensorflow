@@ -11,7 +11,7 @@ def batch_to_grid(images):
 
     grid_images = np.zeros((n_rows * h, n_cols * w, ch), dtype='int32')
     for i, image in enumerate(images):
-        i_row, i_col = i // i_col, i % i_col
+        i_row, i_col = i // n_cols, i % n_cols
         grid_images[i_row * h:(i_row + 1) * h,
                     i_col * w:(i_col + 1) * w] = image
     return grid_images
