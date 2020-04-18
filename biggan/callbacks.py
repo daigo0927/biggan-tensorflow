@@ -9,10 +9,11 @@ def batch_to_grid(images):
     n_rows = int(np.sqrt(batch_size))
     n_cols = n_rows if n_rows**2 == batch_size else n_rows + 1
 
-    grid_images = np.zeros((h, n_rows * n_cols * w, ch), dtype='int32')
+    grid_images = np.zeros((n_rows * h, n_cols * w, ch), dtype='int32')
     for i, image in enumerate(images):
-        grid_images[:, i * w:(i + 1) * w] = image
-    grid_images = grid_images.reshape((n_rows * h, n_cols * w, ch))
+        i_row, i_col = i // i_col, i % i_col
+        grid_images[i_row * h:(i_row + 1) * h,
+                    i_col * w:(i_col + 1) * w] = image
     return grid_images
 
 
