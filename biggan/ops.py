@@ -48,13 +48,10 @@ class SpectralNormalization(layers.Layer):
 
         if training:
             self.u.assign(u)
-            u = tf.identity(u)
-
-        u = tf.stop_gradient(u)
-        v = tf.stop_gradient(v)
 
         # Spectral norm
         norm = tf.matmul(tf.matmul(u, w, transpose_a=True), v)  # (1, 1)
+        norm = tf.stop_gradient(norm)
         # Normalization
         w_normalized = w / norm
         return tf.reshape(w_normalized, w_shape)
@@ -365,7 +362,8 @@ if __name__ == '__main__':
     for _ in range(100):
         _ = sn(weights, training)
     u_pseudo = sn.u.numpy()[:, 0]
-    cossim = np.abs(np.sum(u0_np * u_pseudo)) / norm(u0_np) / norm(u_pseudo)
+    cossim = np.abs(np.sum(u0_np * u_pseudo)) / norm(u0_np, 2) / norm(
+        u_pseudo, 2)
     if cossim > 0.95:
         print(f'Singular vector similarity: {cossim}')
     else:
@@ -384,7 +382,8 @@ if __name__ == '__main__':
     for _ in range(100):
         _ = sn(weights, training)
     u_fix = sn.u.numpy()[:, 0]
-    cossim = np.abs(np.sum(u_pseudo * u_fix)) / norm(u_pseudo) / norm(u_fix)
+    cossim = np.abs(np.sum(u_pseudo * u_fix)) / norm(u_pseudo, 2) / norm(
+        u_fix, 2)
     if cossim > 0.95:
         print(f'Singular vector preservation : {cossim}')
     else:
