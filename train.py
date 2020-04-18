@@ -25,7 +25,7 @@ def train(config, logdir):
     batch_size = 1
     z_dim = 100
     image_size = (64, 64)
-    num_classes = 10
+    num_classes = 2
     base_dim = 64
     embedding_size = 128
 
