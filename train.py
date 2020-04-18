@@ -1,6 +1,4 @@
 import os
-import sys
-import time
 import tempfile
 import argparse
 import tensorflow as tf
@@ -51,8 +49,8 @@ def train(config, logdir):
                       discriminator,
                       name='biggan')
 
-    biggan.compile(g_optimizer=tf.keras.optimizers.Adam(),
-                   d_optimizer=tf.keras.optimizers.Adam(),
+    biggan.compile(g_optimizer=tf.keras.optimizers.Adam(5e-5, 0, 0.999),
+                   d_optimizer=tf.keras.optimizers.Adam(2e-4, 0, 0.999),
                    g_loss_fn=g_hinge_loss,
                    d_loss_fn=d_hinge_loss)
 
