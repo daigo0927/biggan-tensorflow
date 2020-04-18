@@ -72,16 +72,16 @@ class Generator(tf.keras.Model):
         self.embed = layers.Embedding(self.num_classes,
                                       self.embedding_size,
                                       name='embed')
-        self.linear = ops.SNLinear(self.base_dim * 8 * 4 * 4, name='linear')
-        self.block_1 = GBlock(self.base_dim * 8, name='block_1')
-        self.block_2 = GBlock(self.base_dim * 4, name='block_2')
-        self.block_3 = GBlock(self.base_dim * 2, name='block_3')
+        self.linear = ops.SNLinear(self.base_dim * 16 * 4 * 4, name='linear')
+        self.block_1 = GBlock(self.base_dim * 16, name='block_1')
+        self.block_2 = GBlock(self.base_dim * 8, name='block_2')
+        self.block_3 = GBlock(self.base_dim * 4, name='block_3')
         self.attn = ops.SNSelfAttention(use_bias=False, name='attn')
-        self.block_4 = GBlock(self.base_dim, name='block_4')
+        self.block_4 = GBlock(self.base_dim * 2, name='block_4')
 
         self.out = tf.keras.Sequential([
             layers.BatchNormalization(
-                momentum=0.9999, epsilon=1e-5, name='bn_out'),
+                momentum=0.1, epsilon=1e-5, name='bn_out'),
             layers.ReLU(),
             ops.SNConv2D(3, (3, 3), (1, 1), name='conv_out'),
             layers.Activation('tanh')
@@ -95,7 +95,7 @@ class Generator(tf.keras.Model):
         conditions = [tf.concat([embed, z_i], axis=-1) for z_i in zs[1:]]
 
         x = self.linear(zs[0], training)
-        x = tf.reshape(x, [-1, 4, 4, self.base_dim * 8])
+        x = tf.reshape(x, [-1, 4, 4, self.base_dim * 16])
         x = self.block_1([x, conditions[0]], training)
         x = self.block_2([x, conditions[1]], training)
         x = self.block_3([x, conditions[2]], training)
@@ -228,18 +228,18 @@ class DBlock(layers.Layer):
 
     def call(self, inputs, training=None):
         if self.preactivation:
-            x = self.activation(inputs)
+            fx = self.activation(inputs)
         else:
-            x = inputs
+            fx = inputs
 
-        fx = self.conv_1(x, training)
+        fx = self.conv_1(fx, training)
         fx = self.conv_2(self.activation(fx), training)
+
+        x = self.conv_sc(inputs, training)
 
         if self.downsample:
             fx = self.downsampling(fx)
             x = self.downsampling(x)
-
-        x = self.conv_sc(x, training)
         return x + fx
 
 
