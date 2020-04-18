@@ -23,14 +23,17 @@ def train(config, logdir):
     batch_size = 1
     z_dim = 100
     image_size = (64, 64)
-    num_classes = 2
+    num_classes = 120
     base_dim = 64
     embedding_size = 128
 
-    ds = tfds.load('cats_vs_dogs', split='train', as_supervised=True)
-    num_examples = 23262
+    ds_train, ds_test = tfds.load('stanford_dogs',
+                                  split=['train', 'test'],
+                                  as_supervised=True)
+    ds = ds_train.concatenate(ds_test)
+    num_examples = 20580
     steps_per_epoch = num_examples // batch_size
-    ds = ds.shuffle(20000)\
+    ds = ds.shuffle(num_examples)\
       .map(partial(preprocess, image_size=image_size),
            num_parallel_calls=tf.data.experimental.AUTOTUNE)\
       .batch(batch_size)\
