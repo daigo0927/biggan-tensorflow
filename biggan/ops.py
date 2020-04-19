@@ -1,24 +1,83 @@
+''' Implementations of GAN modules '''
+
 import tensorflow as tf
 from tensorflow.keras import layers, initializers
 
 # COPYRIGHT for implementation of spectral normalization.
-# coding=utf-8
-# Copyright 2020 The TensorFlow GAN Authors.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# MIT License
+
+# Copyright (c) 2019 Eon Kim
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Additional reference: https://github.com/chainer/chainer/blob/v7.1.0/chainer/link_hooks/spectral_normalization.py#L79
 
 
-class SpectralNormalization(layers.Layer):
+class SpectralNormalization(layers.Wrapper):
+    def __init__(self, layer, n_power_iters=1, weight_name='kernel', **kwargs):
+        if not isinstance(layer, layers.Layer):
+            raise ValueError(f'Invalid layer argument was given: {layer}')
+        super().__init__(layer, **kwargs)
+        self.n_power_iters = n_power_iters
+        self.weight_name = weight_name
+        self.original_weight = None
+
+    def build(self, input_shape):
+        self.layer.build(input_shape)
+        weight = getattr(self.layer, self.weight_name)
+        w_shape = weight.shape.as_list()
+        self.u = self.add_weight(
+            'u',
+            shape=[w_shape[-1], 1],
+            dtype=tf.float32,
+            initializer=initializers.TruncatedNormal(stddev=0.02),
+            trainable=False)
+
+        super().build()
+
+    def call(self, inputs, training=None):
+        self.update_weights(training)
+        outputs = self.layer(inputs)
+        self.restore_weights()
+        return outputs
+
+    def update_weight(self):
+        self.original_weight = getattr(self.layer, self.weight_name)
+        weight = self.original_weight
+
+        w = tf.reshape(weight, [-1, self.w_shape[-1]])
+
+        u = self.u
+        for _ in range(self.n_power_iters):
+            v = tf.nn.l2_normalize(tf.matmul(w, u))  # (kxkxch1, 1)
+            u = tf.nn.l2_normalize(tf.matmul(w, v,
+                                             transpose_a=True))  # (ch2, 1)
+
+        sigma = tf.matmul(tf.matmul(v, w, transpose_a=True), u)  # (1, 1)
+        setattr(self.layer, self.weight_name, weight / sigma)
+
+    def restore_weight(self):
+        setattr(self.layer, self.weight_name, self.original_weight)
+
+
+class _SpectralNormalization(layers.Layer):
     def __init__(self,
                  n_power_iters=1,
                  initializer=initializers.RandomNormal(),
@@ -29,28 +88,28 @@ class SpectralNormalization(layers.Layer):
 
     def build(self, input_shape):
         # Dummy weights for shape inference
-        w = tf.reshape(tf.zeros(input_shape), [-1, input_shape[-1]])
         self.u = self.add_weight('u',
-                                 shape=[w.shape[0], 1],
+                                 shape=[input_shape[-1], 1],
                                  dtype=tf.float32,
                                  initializer=self.initializer,
-                                 trainable=False)
+                                 trainable=False)  # (ch2, 1)
+        # v: (kxkxch1, 1)
 
     def call(self, inputs, training=None):
         w_shape = inputs.get_shape()  # Conv2D case: (k, k, ch1, ch2)
         w = tf.reshape(inputs, [-1, w_shape[-1]])  # (kxkxch1, ch2)
 
-        u = self.u  # (kxkxch1, 1)
+        u = self.u  # (ch2, 1)
         for _ in range(self.n_power_iters):
-            v = tf.nn.l2_normalize(tf.matmul(w, u,
+            v = tf.nn.l2_normalize(tf.matmul(w, u))  # (kxkxch1, 1)
+            u = tf.nn.l2_normalize(tf.matmul(w, v,
                                              transpose_a=True))  # (ch2, 1)
-            u = tf.nn.l2_normalize(tf.matmul(w, v))  # (kxkxch1, 1)
 
         if training:
             self.u.assign(u)
 
         # Spectral norm
-        norm = tf.matmul(tf.matmul(u, w, transpose_a=True), v)  # (1, 1)
+        norm = tf.matmul(tf.matmul(v, w, transpose_a=True), u)  # (1, 1)
         norm = tf.stop_gradient(norm)
         # Normalization
         w_normalized = w / norm
@@ -357,7 +416,7 @@ if __name__ == '__main__':
     norm = np.linalg.norm
     import scipy as sp
     w_np = weights.numpy().reshape((-1, output_dim))
-    u_np, s_np, vt_np = sp.linalg.svd(w_np)
+    u_np, s_np, vt_np = sp.linalg.svd(w_np.T)
     u0_np = u_np[:, 0]
     for _ in range(100):
         _ = sn(weights, training)
