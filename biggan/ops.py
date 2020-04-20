@@ -82,7 +82,7 @@ def SNConv2D(filters, kernel_size, strides=(1, 1), **kwargs):
     return SpectralNormalization(layers.Conv2D(filters, kernel_size, strides,
                                                **kwargs),
                                  n_power_iters=1,
-                                 name='sn')
+                                 name='sn_conv')
 
 
 def SNConv1x1(filters, **kwargs):
@@ -92,7 +92,7 @@ def SNConv1x1(filters, **kwargs):
 def SNLinear(units, **kwargs):
     return SpectralNormalization(layers.Dense(units, **kwargs),
                                  n_power_iters=1,
-                                 name='sn')
+                                 name='sn_linear')
 
 
 class TransposedEmbedding(layers.Layer):
@@ -118,7 +118,7 @@ def SNEmbedding(input_dim, output_dim, **kwargs):
                                                      **kwargs),
                                  n_power_iters=1,
                                  weight_name='embeddings',
-                                 name='sn')
+                                 name='sn_embedding')
 
 
 class SNSelfAttention(layers.Layer):
