@@ -6,7 +6,7 @@ import tensorflow_datasets as tfds
 from datetime import datetime
 from functools import partial
 
-from biggan.models import Generator, Discriminator, BigGAN64
+from biggan.biggan import Generator, Discriminator, BigGAN64
 from biggan.losses import d_hinge_loss, g_hinge_loss
 from biggan.callbacks import SaveGeneratedImages
 
@@ -18,10 +18,8 @@ def preprocess(image, label, image_size):
     return image, label
 
 
-def train(config, logdir):
-    epochs = 10
-    batch_size = 1
-    z_dim = 100
+def train(logdir, epochs=10, batch_size=1):
+    z_dim = 120
     image_size = (64, 64)
     num_classes = 120
     base_dim = 64
