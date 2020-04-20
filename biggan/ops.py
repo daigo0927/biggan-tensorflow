@@ -127,10 +127,18 @@ class SNSelfAttention(layers.Layer):
 
     def build(self, input_shape):
         in_channels = input_shape[-1]
-        self.conv_theta = SNConv1x1(in_channels // 8, name='sn_conv_theta')
-        self.conv_phi = SNConv1x1(in_channels // 8, name='sn_conv_phi')
-        self.conv_g = SNConv1x1(in_channels // 2, name='sn_conv_g')
-        self.conv_attn = SNConv1x1(in_channels, name='sn_conv_attn')
+        self.conv_theta = SNConv1x1(in_channels // 8,
+                                    use_bias=False,
+                                    name='sn_conv_theta')
+        self.conv_phi = SNConv1x1(in_channels // 8,
+                                  use_bias=False,
+                                  name='sn_conv_phi')
+        self.conv_g = SNConv1x1(in_channels // 2,
+                                use_bias=False,
+                                name='sn_conv_g')
+        self.conv_attn = SNConv1x1(in_channels,
+                                   use_bias=False,
+                                   name='sn_conv_attn')
         self.sigma = self.add_weight('sigma',
                                      shape=[],
                                      initializer=tf.zeros_initializer())
@@ -162,7 +170,7 @@ class SNSelfAttention(layers.Layer):
 
 
 class ConditionalBatchNorm(layers.Layer):
-    def __init__(self, axis=-1, momentum=0.999, epsilon=1E-5, **kwargs):
+    def __init__(self, axis=-1, momentum=0.1, epsilon=1e-5, **kwargs):
         super().__init__(**kwargs)
         self.axis = axis
         self.momentum = momentum
@@ -178,8 +186,12 @@ class ConditionalBatchNorm(layers.Layer):
                                             center=False,
                                             scale=False,
                                             name='bn')
-        self.linear_beta = SNLinear(x_channels, name='sn_linear_beta')
-        self.linear_gamma = SNLinear(x_channels, name='sn_linear_gamma')
+        self.linear_beta = SNLinear(x_channels,
+                                    use_bias=False,
+                                    name='sn_linear_beta')
+        self.linear_gamma = SNLinear(x_channels,
+                                     use_bias=False,
+                                     name='sn_linear_gamma')
 
     def call(self, inputs, training=None):
         x, condition = inputs
